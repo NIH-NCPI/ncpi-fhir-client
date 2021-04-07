@@ -32,12 +32,12 @@ class AuthBasic:
 
     @classmethod
     def example_config(cls, writer, other_entries):
-        print(f"""dev:
+        print(f"""\n# Example of a basic auth configuration
+dev:
     auth_type: 'auth_basic'
     username: 'admin'
-    password: 'password'
-""", file=writer)
+    password: 'password'""", file=writer)
         for key in other_entries.keys():
-            print(f"{key}: '{other_enries[key]}'\n", file=writer)
+            print(f"    {key}: '{other_entries[key]}'", file=writer)
 
 

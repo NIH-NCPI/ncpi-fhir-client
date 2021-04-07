@@ -16,14 +16,14 @@ class AuthGcpTargetService:
         """Add the bearer token to the header based on the token provided"""
         if 'headers' not in request_args:
             request_args['headers'] = {}
-        request_args['headers']['auth'] = "Bearer " + self.gauth.access_token()
+        request_args['headers']['Authorization'] = "Bearer " + self.gauth.access_token()
 
     @classmethod
     def example_config(cls, writer, other_entries):
-        print(f"""dev-service-token:
+        print(f"""\n# Example configuration for gcp target-service
+dev-service-token:
     auth_type: 'auth_gcp_target_service'
-    service_account_token: 'path-to-token'
-""", file=writer)
+    service_account_token: 'path-to-token'""", file=writer)
         for key in other_entries.keys():
-            print(f"{key}: '{other_enries[key]}'\n", file=writer)
+            print(f"    {key}: '{other_entries[key]}'", file=writer)
 

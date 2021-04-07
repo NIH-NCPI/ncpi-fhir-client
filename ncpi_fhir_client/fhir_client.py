@@ -1,4 +1,6 @@
 import logging
+import pdb
+
 logger = logging.getLogger(__name__)
 from ncpi_fhir_utility.client import FhirApiClient
 import subprocess
@@ -25,7 +27,7 @@ class FhirClient:
         self.is_valid = self.auth is not None
 
         # Make the host desc suitable for filenames
-        self.host_desc = self.host_desc.replace("/", "-")
+        self.host_desc = self.host_desc.replace("/", "-").replace(" ", "_").lower()
 
     def init_log(self):
         """make sure this uses the current logging, which probably changes based on user's input"""

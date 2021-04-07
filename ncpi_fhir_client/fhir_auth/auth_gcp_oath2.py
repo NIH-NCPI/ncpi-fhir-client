@@ -17,14 +17,13 @@ class AuthGcpOath2:
         """Use a bearer token based on the openauth token provided"""
         if 'headers' not in request_args:
             request_args['headers'] = {}
-        request_args['headers']['auth'] = "Bearer " + self.gauth.access_token()
+        request_args['headers']['Authorization'] = "Bearer " + self.gauth.access_token()
 
     @classmethod
     def example_config(cls, writer, other_entries):
-        print(f"""dev-oath2:
+        print(f"""\n# Example configuration for gcp + open auth2
+dev-oath2:
     auth_type: 'auth_gcp_oath2'
-    oa2_client_token: 'path-to-token'
-""", file=writer)
+    oa2_client_token: 'path-to-token'""", file=writer)
         for key in other_entries.keys():
-            print(f"{key}: '{other_enries[key]}'\n", file=writer)
-
+            print(f"    {key}: '{other_entries[key]}'", file=writer)

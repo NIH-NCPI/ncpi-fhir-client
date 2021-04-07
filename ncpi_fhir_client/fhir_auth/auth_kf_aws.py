@@ -20,12 +20,12 @@ class AuthKfAws:
 
     @classmethod
     def example_config(cls, writer, other_entries):
-        print(f"""dev-kf-aws:
+        print(f"""\n# Example configuration for cookie based authentication
+dev-kf-aws:
     auth_type: 'auth_kf_aws'
-    cookie: 'AWSELBAuthSessionCookie-0=FDSAFDSACookieContentsASDFASDF'
-""", file=writer)
+    cookie: 'AWSELBAuthSessionCookie-0=FDSAFDSACookieContentsASDFASDF'""", file=writer)
         for key in other_entries.keys():
-            print(f"{key}: '{other_enries[key]}'\n", file=writer)
+            print(f"    {key}: '{other_entries[key]}'", file=writer)
 
 
 
