@@ -9,6 +9,19 @@ from pprint import pformat
 from ncpi_fhir_client.fhir_auth import get_auth
 from ncpi_fhir_client.fhir_result import FhirResult
 
+class InvalidCall(Exception):
+    def __init__(self, url, response):
+        self.status_code = response['status_code']
+        self.url = url
+        self.response = response
+
+        super().__init__(f"HTTP {self.status_code} encountered")
+
+def ExceptOnFailure(success, url, response):
+    if not success:
+        raise InvalidCall(url, response)
+
+
 class FhirClient:
     def __init__(self, cfg):
         """cfg is a dictionary containing all relevant details suitable for host and authentication"""
@@ -116,18 +129,29 @@ class FhirClient:
 
             return result
 
-    def get(self, resource, recurse=True, no_count=False):
-        """Default to recurse down the chain of 'next' links
+    def get(self, resource, recurse=True, rec_count=250, raw_result=False):
+        """Wrapper for basic http:get
 
-           Please note that this is currently not very robust and but it works with our CMG data. 
+        :param resource: FHIR Resource type 
+        :param recurse: Aggregate responses across pages, defaults to True
+        :type recurse: Boolean
+        :param rec_count: records per page, defaults to 250
+        :type rec_count: int
+        :param raw_result: Return the actual result from the server instead of wrapping it as a FhirResult, defaults to False
+        :type raw_result: Boolean
+        :return: zero or more records inside a FhirResult (or raw response from server)
+        :rtype: FhirResult
+
+        TODO This works well for valid queries and Resource/id requests, but probably needs some
+        attention for less straightforward queries
         """
 
         count=""
-        if not no_count:
-            count = "?_count=250"
+        if rec_count > 0:
+            count = f"?_count={rec_count}"
 
             if "?" in resource:
-                count = "&_count=250"
+                count = f"&_count={rec_count}"
 
         reqargs = {}
         self.auth.update_request_args(reqargs)    
@@ -140,7 +164,10 @@ class FhirClient:
             print(pformat(result))
 
         # For now, let's just give up if there was a problem
-        assert(success)
+        ExceptOnFailure(success, url, result)
+
+        if raw_result:
+            return result
         content = FhirResult(result)
 
         # Follow paginated results if so desired
@@ -148,7 +175,7 @@ class FhirClient:
             params = content.next.split("?")[1]
 
             success, result = self.client().send_request("GET", f"{self.target_service_url}?{params}", **reqargs)
-            assert(success)
+            ExceptOnFailure(success, url, result)
             content.append(result)
         return content
 
