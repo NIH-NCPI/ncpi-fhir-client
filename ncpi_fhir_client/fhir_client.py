@@ -60,6 +60,19 @@ class FhirClient:
             headers.update(self.client()._fhir_version_headers())
         return headers
 
+    def delete_by_query(self, resource, qry):
+        reqargs = {}
+
+        responses = []
+        for response in self.get(f"{resource}?{qry}").entries:
+            if "resource" in response:
+                responses.append(self.delete_by_record_id(resource, response['resource']['id']))
+
+        if len(response) == 1:
+            return response[0]
+        return responses
+
+
     def delete_by_record_id(self, resource, id):
         """Just a basic delete wrapper"""
         reqargs = {        }
@@ -90,6 +103,7 @@ class FhirClient:
            Please note that this accepts json-patch data and not a traditional fhir record"""
         headers = self.get_login_header()
         headers['Content-Type'] = 'application/json-patch+json'
+        headers['Prefer'] = 'return=representation'
         reqargs = {
             'headers': headers,
             'json': data
@@ -102,6 +116,34 @@ class FhirClient:
                                 **reqargs)
 
         return result        
+
+    def load(self, resource, data, validate_only=False):
+        objs = data
+
+        if not isinstance(objs, list):
+            objs = [data]
+
+        for obj in objs:
+            # First thing, let's go ahead and try deleting 
+            assert 'url' in data
+            url = data['url']
+            self.delete_by_query(resource, f"url={url}")
+
+            kwargs = {
+                'json': data
+            }
+            
+            self.auth.update_request_args(kwargs)            
+            endpoint = f"{self.target_service_url}/{resource}"
+            if validate_only:
+                endpoint += "/$validate"
+
+            success, result = self.client().send_request(
+                                "POST", 
+                                endpoint, 
+                                **kwargs)
+
+            return result        
 
     def post(self, resource, data, validate_only=False):
         """Basic POST wrapper
