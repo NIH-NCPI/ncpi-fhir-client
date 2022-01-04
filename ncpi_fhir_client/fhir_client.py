@@ -6,6 +6,8 @@ from ncpi_fhir_utility.client import FhirApiClient
 import subprocess
 from time import sleep
 from pprint import pformat
+from copy import deepcopy
+from json import dumps
 
 from ncpi_fhir_client.fhir_auth import get_auth
 from ncpi_fhir_client.fhir_result import FhirResult
@@ -181,6 +183,9 @@ class FhirClient:
             objs = [data]
 
         for obj in objs:
+            verb = "POST"     
+            endpoint = f"{self.target_service_url}/{resource}"
+
             # Certainly don't want to delete anything if we are just validating something
             # that may coincidentally overlap with the current resource's URL
             if not validate_only:
@@ -193,32 +198,39 @@ class FhirClient:
                     if "resource" in response:
                         if skip_insert_if_present:
                             return {'status_code': 201, 'response':response}
-                        responses.append(self.delete_by_record_id(resource, response['resource']['id']))
-
+                        if 'id' not in obj:
+                            obj['id'] = response['resource']['id']
+                            verb = 'PUT'
+                            endpoint =  f"{self.target_service_url}/{resource}/{obj['id']}"
+                        else:
+                            # Only delete if we encounter the same thing more than once
+                            responses.append(self.delete_by_record_id(resource, response['resource']['id']))
 
             kwargs = {
                 'json': obj
             }
-            
-            self.auth.update_request_args(kwargs)            
-            endpoint = f"{self.target_service_url}/{resource}"
+
+            self.auth.update_request_args(kwargs)       
             if validate_only:
                 endpoint += "/$validate"
 
             success, result = self.client().send_request(
-                                "POST", 
+                                verb, 
                                 endpoint, 
                                 **kwargs)
 
             return result        
 
-    def post(self, resource, data, validate_only=False, identifier=None):
+    def post(self, resource, data, validate_only=False, identifier=None, identifier_type='identifier'):
         """Basic POST wrapper
         
            validate_only will append the $validate to the end of the final url
            
            providing an identifier will result in querying for an existing record
-           and replacing it"""
+           and replacing it.
+           
+           If identifier finds a match or the resource object itself contains
+           an id, the endpoint will become an overwrite using PUT instead of POST """
         objs = data
 
         if not isinstance(objs, list):
@@ -231,13 +243,15 @@ class FhirClient:
             
             self.auth.update_request_args(kwargs)            
             endpoint = f"{self.target_service_url}/{resource}"
+            if resource == 'Bundle':
+                endpoint = self.target_service_url
             if validate_only:
                 endpoint += "/$validate"
 
             verb = "POST"
             if identifier is not None:
                 #pdb.set_trace()
-                result = self.get(f"{resource}?identifier={identifier}")
+                result = self.get(f"{resource}?{identifier_type}={identifier}")
                 # If it wasn't found, then we just plan to create
                 if result.success():
                     if result.entry_count > 0:
@@ -245,9 +259,12 @@ class FhirClient:
                         id = entry['resource']['id']
                         print(f"Reusing the existing resource at {resource}:{id}")
                         obj['id'] = id
-                        endpoint = f"{self.target_service_url}/{resource}/{id}"
-                        verb = "PUT"
-                        kwargs['json'] = obj
+ 
+            if 'id' in obj and resource != "Bundle":
+                verb = "PUT"
+                #pdb.set_trace()
+                endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
+                kwargs['json'] = obj
 
             success, result = self.client().send_request(
                                 verb, 
