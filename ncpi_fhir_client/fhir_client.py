@@ -9,8 +9,17 @@ from pprint import pformat
 from copy import deepcopy
 from json import dumps
 
+from threading import Lock
+
 from ncpi_fhir_client.fhir_auth import get_auth
 from ncpi_fhir_client.fhir_result import FhirResult
+
+import urllib3
+
+http = urllib3.PoolManager(maxsize=64)
+
+# Just make sure our logs aren't unreadable due to threads
+log_lock = Lock()
 
 class InvalidCall(Exception):
     def __init__(self, url, response):
@@ -23,7 +32,6 @@ class InvalidCall(Exception):
 def ExceptOnFailure(success, url, response):
     if not success:
         raise InvalidCall(url, response)
-
 
 class FhirClient:
     def __init__(self, cfg):
@@ -139,7 +147,8 @@ class FhirClient:
         endpoint = f"{self.target_service_url}/{resource}/{id}"
         success, result = self.client().send_request("delete", endpoint, **reqargs)
         if not success:
-            self.logger.error(pformat(result))
+            with log_lock:
+                self.logger.error(pformat(result))
         return result
 
     # TODO: Allow this function to pull the data first and merge changes in
