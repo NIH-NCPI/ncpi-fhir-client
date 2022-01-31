@@ -16,6 +16,7 @@ from ncpi_fhir_client.fhir_result import FhirResult
 
 import urllib3
 
+urllib3.disable_warnings()
 http = urllib3.PoolManager(maxsize=64)
 
 # Just make sure our logs aren't unreadable due to threads
@@ -34,14 +35,26 @@ def ExceptOnFailure(success, url, response):
         raise InvalidCall(url, response)
 
 class FhirClient:
-    def __init__(self, cfg):
-        """cfg is a dictionary containing all relevant details suitable for host and authentication"""
+    retry_post_count = 5
+    def __init__(self, cfg, idcache=None):
+        """cfg is a dictionary containing all relevant details suitable for host and authentication
+        
+        idcache is an optional substitute for the GET behavior we use when an entry isn't in our 
+        dbcache. This will allow us to get ALL ids at the start and determine right away if it is
+        present or not without the extra HTTP call. As long as new entries are going into a normal 
+        ID cache, all should be fine (i.e. we can safely ignore ids that are added by the current
+        application because those should be cached by another, more permanent mechanism)
+
+        When idcache is not in use, we'll fall back onto the GET approach
+        """
         self.host_desc = cfg.get('host_desc')
         self.auth = get_auth(cfg)
         self.logger = logger
 
         if self.host_desc is None:
             self.host_desc = 'No Description'
+
+        self.idcache = idcache
 
         # URL associated with the host. If it's a non-standard port, use appropriate URL:XXXXX format
         self.target_service_url = cfg.get('target_service_url')
@@ -56,6 +69,9 @@ class FhirClient:
 
         # will remain None until a bundle file is initialized
         self.bundle = None
+
+        if self.idcache is not None:
+            self.idcache.load_ids_from_host(self)
         
     def init_log(self):
         """make sure this uses the current logging, which probably changes based on user's input"""
@@ -230,7 +246,7 @@ class FhirClient:
 
             return result        
 
-    def post(self, resource, data, validate_only=False, identifier=None, identifier_type='identifier'):
+    def post(self, resource, data, validate_only=False, identifier=None, identifier_system=None, identifier_type='identifier'):
         """Basic POST wrapper
         
            validate_only will append the $validate to the end of the final url
@@ -260,25 +276,53 @@ class FhirClient:
             verb = "POST"
             if identifier is not None:
                 #pdb.set_trace()
-                result = self.get(f"{resource}?{identifier_type}={identifier}")
-                # If it wasn't found, then we just plan to create
-                if result.success():
-                    if result.entry_count > 0:
-                        entry = result.entries[0]
-                        id = entry['resource']['id']
-                        print(f"Reusing the existing resource at {resource}:{id}")
+
+                if self.idcache:
+                    #pdb.set_trace()
+                    if identifier_system is not None:
+                        id_system = identifier_system
+                        id_value = identifier
+                    else:
+                        id_system = identifier.split("|")[0]
+                        id_value = "|".join(identifier.split("|")[1:])
+                    id = self.idcache.get_id(id_system, id_value, resource)
+                    if id is not None:
                         obj['id'] = id
- 
+                        #print(f"Reusing the existing resource at {resource}:{id}")
+                        #pdb.set_trace()
+                else:
+                    result = self.get(f"{resource}?{identifier_type}={identifier}")
+                    # If it wasn't found, then we just plan to create
+                    if result.success():
+                        if result.entry_count > 0:
+                            entry = result.entries[0]
+                            id = entry['resource']['id']
+                            print(f"Reusing the existing resource at {resource}:{id}")
+                            obj['id'] = id
+    
             if 'id' in obj and resource != "Bundle":
                 verb = "PUT"
                 #pdb.set_trace()
                 endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
                 kwargs['json'] = obj
 
-            success, result = self.client().send_request(
-                                verb, 
-                                endpoint, 
-                                **kwargs)
+            retry_count = FhirClient.retry_post_count
+            while retry_count > 0:
+                success, result = self.client().send_request(
+                                    verb, 
+                                    endpoint, 
+                                    **kwargs)
+
+                # 422 just means something was preventing it from succeeding, so 
+                # it could be the db hasn't caught up yet, so we'll sleep for a second and
+                # try again. 409 means there is a conflict, which is probably some 
+                # data that is duplicated (such as ds-connect surveys that occur 
+                # more than once)
+                if result['status_code'] not in [422, 409] :
+                    retry_count = 0
+                else:
+                    sleep(1)
+                    retry_count -= 1 
 
             return result
 
