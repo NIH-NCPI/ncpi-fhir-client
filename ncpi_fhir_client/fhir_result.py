@@ -56,5 +56,9 @@ class FhirResult:
             if ref['relation'] == 'next':
                 self.next = ref['url']   
 
+        if 'entry' not in self.response:
+            print(self.response)
+            pdb.set_trace()
+            print("There is a problem with the response")
         self.entries += self.response['entry']
         self.entry_count = len(self.entries)  
