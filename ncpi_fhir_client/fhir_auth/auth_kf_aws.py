@@ -12,10 +12,22 @@ class AuthKfAws:
     def __init__(self, cfg):
         self.cookie = cfg['cookie']
 
+        self.username = None
+        self.password = None
+        # For QA and Prod, we will also have basic authentication on top of the 
+        # cookie. Hopefully this will be sufficient 
+        if 'username' in cfg:
+            self.username = cfg['username'] 
+            self.password = cfg['password']
+
     def update_request_args(self, request_args):
         """Add cookie details to the header"""
         if 'headers' not in request_args:
             request_args['headers'] = {}
+
+        if self.username is not None:
+            request_args['auth'] = (self.username, self.password)
+            
         request_args['headers']['cookie'] = self.cookie
 
     @classmethod
