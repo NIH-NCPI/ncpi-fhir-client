@@ -34,6 +34,13 @@ def ExceptOnFailure(success, url, response):
     if not success:
         raise InvalidCall(url, response)
 
+def getIdentifier(resource):
+    idnt = resource.get('identifier')
+
+    if type(idnt) is list:
+        return idnt[0]
+    return idnt
+
 class FhirClient:
     retry_post_count = 5
     def __init__(self, cfg, idcache=None):
@@ -76,7 +83,6 @@ class FhirClient:
     def init_log(self):
         """make sure this uses the current logging, which probably changes based on user's input"""
         self.logger = logging.getLogger(__name__)
-
 
     def init_bundle(self, bundle_filename, bundle_id):
         self.bundle = open(bundle_filename, 'wt')
@@ -155,14 +161,14 @@ class FhirClient:
         #pdb.set_trace()
         return self.client().send_request(verb, api_path, json=body, headers=headers)
 
-    def delete_by_record_id(self, resource, id):
+    def delete_by_record_id(self, resource, id, silence_warnings=False):
         """Just a basic delete wrapper"""
         reqargs = {        }
         #pdb.set_trace()
         self.auth.update_request_args(reqargs)
         endpoint = f"{self.target_service_url}/{resource}/{id}"
         success, result = self.client().send_request("delete", endpoint, **reqargs)
-        if not success:
+        if not success and not silence_warnings:
             with log_lock:
                 self.logger.error(pformat(result))
         return result
@@ -219,7 +225,10 @@ class FhirClient:
                 url = obj['url']
 
                 responses = []
-                for response in self.get(f"{resource}?url={url}").entries:
+                gendpoint = f"{resource}?url={url}"
+                entries = self.get(gendpoint).entries
+                for response in entries:
+                    #pdb.set_trace()
                     if "resource" in response:
                         if skip_insert_if_present:
                             return {'status_code': 201, 'response':response}
@@ -229,7 +238,15 @@ class FhirClient:
                             endpoint =  f"{self.target_service_url}/{resource}/{obj['id']}"
                         else:
                             # Only delete if we encounter the same thing more than once
-                            responses.append(self.delete_by_record_id(resource, response['resource']['id']))
+                            # pdb.set_trace()
+                            del_response = None
+                            retry_count = 1
+                            delrsp = self.delete_by_record_id(resource, response['resource']['id'])
+                            fresponse = self.sleep_until(gendpoint, 0, message=f"Deleting {response['resource']['id']} / {gendpoint}")
+                            if fresponse.success:
+                                responses.append(fresponse)
+                            else:
+                                print(f"There was a problem deleting the resource, {response['resource']['id']} / {gendpoint}")
 
             kwargs = {
                 'json': obj
@@ -289,6 +306,9 @@ class FhirClient:
                     if id is not None:
                         obj['id'] = id
                         #print(f"Reusing the existing resource at {resource}:{id}")
+                    #else:
+                        #print(id_system)
+                        #print(id_value)
                         #pdb.set_trace()
                 else:
                     result = self.get(f"{resource}?{identifier_type}={identifier}")
@@ -322,8 +342,9 @@ class FhirClient:
                     retry_count = 0
                 else:
                     sleep(1)
-                    retry_count -= 1 
 
+                    retry_count -= 1 
+                    print(f"{result['status_code']} - {getIdentifier(obj)['value']} -- Retrying {retry_count} more times" )
             return result
 
     def get(self, resource, recurse=True, rec_count=-1, raw_result=False, reqargs=None):
