@@ -19,6 +19,7 @@ import re
 from collections import defaultdict
 from argparse import ArgumentParser, FileType
 
+from ncpi_fhir_client import default_resources
 # The get_id will be run inside a thread, so I guess we need to protect it...not really sure
 # if the read can be interrupted. Probably not but it should be reasonably fast. 
 from threading import Lock
@@ -28,21 +29,20 @@ from wstlr.hostfile import load_hosts_file
 import pdb
 
 cache_lock = Lock()
-
-# We are treating CodeSystems and ValueSets differently, so let's not bother caching those
-_default_resource_types = [
-    'ObservationDefinition',
-    'ActivityDefinition',
-    'Patient',
-    'Condition',
-    'Observation',
-    'Specimen',
-    'ResearchSubject',
-    'ResearchStudy'
+_ignored_resource_types = [
+    'CodeSystem',
+    'ValueSet'
 ]
 
+def get_identifier(resource):
+    idnt = resource.get('identifier')
+
+    if type(idnt) is list:
+        return idnt[0]
+    return idnt
+
 class RIdCache:
-    def __init__(self, resource_types = None, valid_patterns = None):
+    def __init__(self, study_id, resource_types = None, valid_patterns = None):
         """
         :param resource_types: List of FHIR Resource types expected to be encountered
         :type resource_types: List of strings
@@ -57,13 +57,12 @@ class RIdCache:
         """
         self.resource_types = resource_types
         self.valid_patterns = []
+        self.study_id = study_id
 
         if valid_patterns is not None:
             for pattern in valid_patterns:
                 self.valid_patterns.append(re.compile(pattern, re.I))
         # pdb.set_trace()
-        if self.resource_types is None:
-            self.resource_types = _default_resource_types
 
         # resourceType=>system=>value = ID
         self.cache = defaultdict(lambda: defaultdict(dict))
@@ -77,6 +76,10 @@ class RIdCache:
         :param fhirclient: the FHIR client that will be used to query data
         :type fhirclient: FhirClient
         """
+
+        if self.resource_types is None:
+            self.resource_types = default_resources(fhir_client, ignore_resources=_ignored_resource_types)
+
         for resource_type in self.resource_types:
             self.load_ids_for_resource_type(fhir_client, resource_type)
 
@@ -95,22 +98,24 @@ class RIdCache:
         return False
 
     def load_ids_for_resource_type(self, fhir_client, resource_type):
-        result = fhir_client.get(f"{resource_type}?_elements=identifier,id&_count=200")
+        result = fhir_client.get(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
         record_count = 0
         if result.success():
             for entity in result.entries:
+                #pdb.set_trace()
                 resource = entity['resource']
                 
                 target_id = resource['id']
                 try:
-                    target_system = resource['identifier'][0]['system']
+                    target_system = get_identifier(resource)['system']
                     if self.valid_system(target_system):
-                        entity_key = resource['identifier'][0]['value']
+                        entity_key =get_identifier(resource)['value']
                         self._store_id(resource_type, target_system, entity_key, target_id)
                         record_count += 1
                 except:
                     self.missing_identifiers[resource_type].append(resource)
-        print(f"{record_count} ids found for {resource_type}")
+        if record_count > 0:
+            print(f"{record_count} ids found for {resource_type}")
 
 
     def get_id(self, target_system, entity_key, resource_type=None):
