@@ -8,6 +8,8 @@ import pdb
 import subprocess
 from pprint import pformat
 
+from collections import defaultdict
+
 class FhirResult:
     """Wrap the return value a bit to make interacting with it a bit more smoother"""
     def __init__(self, payload):
@@ -49,6 +51,7 @@ class FhirResult:
 
     def append(self, payload):
         """Extend our entry data by following pagination links"""
+
         self.response = payload['response']
         self.next = None
 
@@ -62,3 +65,5 @@ class FhirResult:
             print("There is a problem with the response")
         self.entries += self.response['entry']
         self.entry_count = len(self.entries)  
+
+    
