@@ -19,8 +19,11 @@ import datetime
 import subprocess
 import requests
 from pathlib import Path
-
+import sys
 import pdb
+from rich import pretty
+
+pretty.install()
 
 # TODO: these do time-out periodicallly (max lifetime is 1hr)
 # So, probably need keep the expiry so that the token can be 
@@ -30,6 +33,10 @@ class GoogleAuth(object):
         "Optionally choose between target service or open auth2"
         self.target_service = target_service
         self.oa2_client = oa2_client
+
+        self.token_expire = datetime.datetime.now()
+        self.token = None
+        print(f"GA Initialized: {datetime.datetime.now().strftime('%H:%M:%S')}")
 
         # Target Service is probably the most appropriate way to 
         # ingest or run tests
@@ -62,23 +69,34 @@ class GoogleAuth(object):
     def access_token(self, lifetime=60):
         """Generate the token that is to be used to access the server"""
         if self.target_service:
-            claim_set = {
-                "iss": self.account,
-                "scope": self.scope,
-                "aud": self.token_uri,
-                "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=lifetime),
-                "iat": datetime.datetime.utcnow()
-            }
+            curtime = datetime.datetime.now()
 
-            signature = jwt.encode(claim_set, self.private_key, algorithm=self.algorithm)
-            req = requests.post(self.token_uri, 
-                            data={
-                                'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                                'assertion': signature,
-                                'response_type': 'code'
-                                }
-                            )
-            return req.json()['access_token']
+            if curtime >= self.token_expire:
+                claim_set = {
+                    "iss": self.account,
+                    "scope": self.scope,
+                    "aud": self.token_uri,
+                    "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=lifetime),
+                    "iat": datetime.datetime.utcnow()
+                }
+
+                signature = jwt.encode(claim_set, self.private_key, algorithm=self.algorithm)
+                try:
+                    print(f"GA Getting Token: {datetime.datetime.now().strftime('%H:%M:%S')}")
+                    req = requests.post(self.token_uri, 
+                                data={
+                                    'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                                    'assertion': signature,
+                                    'response_type': 'code'
+                                    }
+                                )
+                except:
+                    print(f"Unable to get token: {datetime.datetime.now().strftime('%H:%M:%S')}")
+                    sys.exit(1)
+                self.token = req.json()['access_token']
+                self.token_expire = curtime + datetime.timedelta(seconds=req.json()['expires_in'])
+
+            return self.token
         elif self.oa2_client:
 
             if self.credentials is None or self.credentials.expired:
