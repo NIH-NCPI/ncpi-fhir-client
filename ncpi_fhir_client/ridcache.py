@@ -23,15 +23,19 @@ from ncpi_fhir_client import default_resources
 # The get_id will be run inside a thread, so I guess we need to protect it...not really sure
 # if the read can be interrupted. Probably not but it should be reasonably fast. 
 from threading import Lock
-
+from pprint import pformat
 from wstlr.hostfile import load_hosts_file
 
+
 import pdb
+
+# id_log = open("__ID_LOG.txt", 'wt')
 
 cache_lock = Lock()
 _ignored_resource_types = [
     'CodeSystem',
-    'ValueSet'
+    'ValueSet',
+    'Bundle'
 ]
 
 def get_identifier(resource):
@@ -98,22 +102,33 @@ class RIdCache:
         return False
 
     def load_ids_for_resource_type(self, fhir_client, resource_type):
+        #print(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
+        #if resource_type == "Observation":
+        #    print("Observing the observations")
+        #    pdb.set_trace()
         result = fhir_client.get(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
+        #pdb.set_trace()
         record_count = 0
         if result.success():
             for entity in result.entries:
-                #pdb.set_trace()
+                if 'resource' not in entity:
+                    print(pformat(entity))
+                    pdb.set_trace()
+
                 resource = entity['resource']
-                
-                target_id = resource['id']
-                try:
-                    target_system = get_identifier(resource)['system']
-                    if self.valid_system(target_system):
-                        entity_key =get_identifier(resource)['value']
-                        self._store_id(resource_type, target_system, entity_key, target_id)
-                        record_count += 1
-                except:
-                    self.missing_identifiers[resource_type].append(resource)
+                if resource['resourceType'] != resource_type:
+                    print(f"Here is an issue: {resource['resourceType']} ~= {resource_type}")
+                    #pdb.set_trace()
+                else:
+                    target_id = resource['id']
+                    try:
+                        target_system = get_identifier(resource)['system']
+                        if self.valid_system(target_system):
+                            entity_key =get_identifier(resource)['value']
+                            self.store_id(resource_type, target_system, entity_key, target_id)
+                            record_count += 1
+                    except:
+                        self.missing_identifiers[resource_type].append(resource)
         if record_count > 0:
             print(f"{record_count} ids found for {resource_type}")
 
@@ -171,7 +186,11 @@ class RIdCache:
         :param no_db: only store in the RAM cache, not in the db
         :type no_db: bool
         """
+        if target_system.split("/")[-1] != entity_type.lower():
+            print(f"{target_system}\t{entity_key}\t{entity_type}\t{target_id}\n")
+            pdb.set_trace()
         self.cache[target_system][entity_key] = (entity_type, target_id)
+        # id_log.write(f"{target_system}\t{entity_key}\t{entity_type}\t{target_id}\n")
 
 def exec():
     from ncpi_fhir_client.fhir_client import FhirClient
