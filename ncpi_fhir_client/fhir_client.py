@@ -10,6 +10,7 @@ from copy import deepcopy
 from json import dumps
 
 from threading import Lock
+from pathlib import Path
 
 from ncpi_fhir_client.fhir_auth import get_auth
 from ncpi_fhir_client.fhir_result import FhirResult
@@ -21,6 +22,7 @@ http = urllib3.PoolManager(maxsize=64)
 
 # Just make sure our logs aren't unreadable due to threads
 log_lock = Lock()
+
 
 class InvalidCall(Exception):
     def __init__(self, url, response):
@@ -43,7 +45,7 @@ def getIdentifier(resource):
 
 class FhirClient:
     retry_post_count = 5
-    def __init__(self, cfg, idcache=None):
+    def __init__(self, cfg, idcache=None, cmdlog=None):
         """cfg is a dictionary containing all relevant details suitable for host and authentication
         
         idcache is an optional substitute for the GET behavior we use when an entry isn't in our 
@@ -57,6 +59,13 @@ class FhirClient:
         self.host_desc = cfg.get('host_desc')
         self.auth = get_auth(cfg)
         self.logger = logger
+
+        self.rest_log = None
+
+        if cmdlog is not None:
+            log_dir = Path(cmdlog).parent
+            log_dir.mkdir(parents=True, exist_ok=True)
+            self.rest_log = open(cmdlog, 'wt')
 
         if self.host_desc is None:
             self.host_desc = 'No Description'
@@ -144,7 +153,6 @@ class FhirClient:
         for response in self.get(f"{resource}?{qry}").entries:
             if "resource" in response:
                 responses.append(self.delete_by_record_id(resource, response['resource']['id']))
-
         if len(responses) == 1:
             return responses[0]
         return responses
@@ -155,16 +163,15 @@ class FhirClient:
         if reqargs is None:
             reqargs = {'headers': headers}
 
-        #headers = self.get_login_header(headers)
         self.auth.update_request_args(reqargs)
         headers = self.get_login_header(reqargs['headers'])
-        #pdb.set_trace()
+
         return self.client().send_request(verb, api_path, json=body, headers=headers)
 
     def delete_by_record_id(self, resource, id, silence_warnings=False):
         """Just a basic delete wrapper"""
         reqargs = {        }
-        #pdb.set_trace()
+
         self.auth.update_request_args(reqargs)
         endpoint = f"{self.target_service_url}/{resource}/{id}"
         success, result = self.client().send_request("delete", endpoint, **reqargs)
@@ -238,7 +245,6 @@ class FhirClient:
                             endpoint =  f"{self.target_service_url}/{resource}/{obj['id']}"
                         else:
                             # Only delete if we encounter the same thing more than once
-                            # pdb.set_trace()
                             del_response = None
                             retry_count = 1
                             delrsp = self.delete_by_record_id(resource, response['resource']['id'])
@@ -292,10 +298,8 @@ class FhirClient:
 
             verb = "POST"
             if identifier is not None:
-                #pdb.set_trace()
 
                 if self.idcache:
-                    #pdb.set_trace()
                     if identifier_system is not None:
                         id_system = identifier_system
                         id_value = identifier
@@ -305,11 +309,7 @@ class FhirClient:
                     id = self.idcache.get_id(id_system, id_value, resource)
                     if id is not None:
                         obj['id'] = id
-                        #print(f"Reusing the existing resource at {resource}:{id}")
-                    #else:
-                        #print(id_system)
-                        #print(id_value)
-                        #pdb.set_trace()
+
                 else:
                     result = self.get(f"{resource}?{identifier_type}={identifier}")
                     # If it wasn't found, then we just plan to create
@@ -317,12 +317,11 @@ class FhirClient:
                         if result.entry_count > 0:
                             entry = result.entries[0]
                             id = entry['resource']['id']
-                            print(f"Reusing the existing resource at {resource}:{id}")
                             obj['id'] = id
     
             if 'id' in obj and resource != "Bundle":
                 verb = "PUT"
-                #pdb.set_trace()
+
                 endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
                 kwargs['json'] = obj
 
@@ -342,12 +341,13 @@ class FhirClient:
                     retry_count = 0
                 else:
                     sleep(1)
+                    print(f"{result['status_code']} - {getIdentifier(obj)['value']} -- Retrying {retry_count} more times" )
+                    pdb.set_trace()
 
                     retry_count -= 1 
-                    print(f"{result['status_code']} - {getIdentifier(obj)['value']} -- Retrying {retry_count} more times" )
             return result
 
-    def get(self, resource, recurse=True, rec_count=-1, raw_result=False, reqargs=None):
+    def get(self, resource, recurse=True, rec_count=-1, raw_result=False, reqargs=None, except_on_error=True):
         """Wrapper for basic http:get
 
         :param resource: FHIR Resource type 
@@ -380,16 +380,17 @@ class FhirClient:
             url = f"{resource}{count}"
         else:
             url = f"{self.target_service_url}/{resource}{count}"
-        #if 'headers' in reqargs:
-        #    print(f"Header for {url} : {reqargs['headers']}")
+
         success, result = self.client().send_request("GET", f"{url}", **reqargs)
-       
-        if not success:
+
+        # We'll skip printing this if we return the error to the calling function
+        if not success and except_on_error:
             print("There was a problem with the request for the GET")
             print(pformat(result))
 
         # For now, let's just give up if there was a problem
-        ExceptOnFailure(success, url, result)
+        if except_on_error:
+            ExceptOnFailure(success, url, result)
 
         if raw_result:
             return result
@@ -397,9 +398,8 @@ class FhirClient:
 
         # Follow paginated results if so desired
         while recurse and content.next is not None:
-            params = content.next.split("?")[1]
+            success, result = self.client().send_request("GET", content.next,  **reqargs)
 
-            success, result = self.client().send_request("GET", f"{self.target_service_url}?{params}", **reqargs)
             ExceptOnFailure(success, url, result)
             content.append(result)
         return content
@@ -413,7 +413,6 @@ class FhirClient:
             entries = response.entries
 
             if len(entries) > 0:
-                #pdb.set_trace()
                 # May (or may not) be a bundle...
                 if 'resourceType' in entries[0]:
                     if entries[0]['resourceType'] == 'Bundle':
@@ -422,8 +421,6 @@ class FhirClient:
                         else:
                             entries = []
 
-            #if len(entries) == target_count or n >= timeout:
-            #    return response
             entry_count = len(entries)
             if 'total' in response.response:
                 entry_count = response.response['total']
