@@ -341,6 +341,11 @@ class FhirClient:
                     retry_count = 0
                 else:
                     sleep(1)
+                    print(pformat(data))
+                    print("------------------")
+                    for issue in result['response']['issue']:
+                        if issue['severity'] == "error":
+                            print(pformat(issue))
                     print(f"{result['status_code']} - {getIdentifier(obj)['value']} -- Retrying {retry_count} more times" )
                     pdb.set_trace()
 
