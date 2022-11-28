@@ -35,8 +35,8 @@ class AuthBasic:
         print(f"""\n# Example of a basic auth configuration
 dev:
     auth_type: 'auth_basic'
-    username: 'admin'
-    password: 'password'""", file=writer)
+    username: 'yourusername'
+    password: 'yourpassword'""", file=writer)
         for key in other_entries.keys():
             print(f"    {key}: '{other_entries[key]}'", file=writer)
 
