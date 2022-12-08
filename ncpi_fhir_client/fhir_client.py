@@ -269,7 +269,14 @@ class FhirClient:
 
             return result        
 
-    def post(self, resource, data, validate_only=False, identifier=None, identifier_system=None, identifier_type='identifier'):
+    def post(self, 
+                    resource, 
+                    data, 
+                    validate_only=False, 
+                    identifier=None, 
+                    identifier_system=None, 
+                    identifier_type='identifier', 
+                    retry_count=None):
         """Basic POST wrapper
         
            validate_only will append the $validate to the end of the final url
@@ -325,7 +332,9 @@ class FhirClient:
                 endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
                 kwargs['json'] = obj
 
-            retry_count = FhirClient.retry_post_count
+            if retry_count is None:
+                retry_count = FhirClient.retry_post_count
+
             while retry_count > 0:
                 success, result = self.client().send_request(
                                     verb, 
@@ -346,10 +355,11 @@ class FhirClient:
                     for issue in result['response']['issue']:
                         if issue['severity'] == "error":
                             print(pformat(issue))
-                    print(f"{result['status_code']} - {getIdentifier(obj)['value']} -- Retrying {retry_count} more times" )
-                    pdb.set_trace()
-
                     retry_count -= 1 
+                    print(f"{result['status_code']} - {getIdentifier(obj)['value']}")
+                    if retry_count > 0:
+                        print(f"Retrying {retry_count} more times" )
+
             return result
 
     def get(self, resource, recurse=True, rec_count=-1, raw_result=False, reqargs=None, except_on_error=True):
