@@ -148,7 +148,7 @@ class FhirClient:
 
     def delete_by_query(self, resource, qry):
         reqargs = {}
-        pdb.set_trace()
+        #pdb.set_trace()
         responses = []
         for response in self.get(f"{resource}?{qry}").entries:
             if "resource" in response:
