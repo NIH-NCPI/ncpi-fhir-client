@@ -2,7 +2,9 @@ import logging
 import pdb
 
 logger = logging.getLogger(__name__)
-from ncpi_fhir_utility.client import FhirApiClient
+#from ncpi_fhir_utility.client import FhirApiClient
+
+from ncpi_fhir_client import requests_retry_session
 import subprocess
 from time import sleep
 from pprint import pformat
@@ -16,7 +18,9 @@ from ncpi_fhir_client.fhir_auth import get_auth
 from ncpi_fhir_client.fhir_result import FhirResult
 
 import urllib3
+import sys
 
+import urllib.parse
 urllib3.disable_warnings()
 http = urllib3.PoolManager(maxsize=64)
 
@@ -45,6 +49,7 @@ def getIdentifier(resource):
 
 class FhirClient:
     retry_post_count = 5
+    fhir_version = "4.0.1"
     def __init__(self, cfg, idcache=None, cmdlog=None):
         """cfg is a dictionary containing all relevant details suitable for host and authentication
         
@@ -56,12 +61,15 @@ class FhirClient:
 
         When idcache is not in use, we'll fall back onto the GET approach
         """
+        #pdb.set_trace()
+
         self.host_desc = cfg.get('host_desc')
         self.auth = get_auth(cfg)
         self.logger = logger
 
         self.rest_log = None
 
+        self.session = requests_retry_session()
         if cmdlog is not None:
             log_dir = Path(cmdlog).parent
             log_dir.mkdir(parents=True, exist_ok=True)
@@ -131,23 +139,21 @@ class FhirClient:
 }""")
             self.bundle.close()
 
-
-    def client(self):
-        """Return cached client object, creating it if necessary"""
-        if self._client is None:
-            self._client = FhirApiClient(
-                base_url=self.target_service_url) #, auth=self.auth.auth)
-
-        return self._client
-
-    def get_login_header(self, headers = {}):
+    def get_login_header(self, headers = None):
         """Just emulating what the fhir tools library does, but it's easy to find if we decide to add to it"""
+
+        if headers is None:
+            headers = {}
+
         if "Content-Type" not in headers:
-            headers.update(self.client()._fhir_version_headers())
+            major_version = FhirClient.fhir_version.split(".")[0]
+            base_fhir_headers = {
+                "Content-Type": f"application/fhir+json; fhirVersion={major_version}.0"
+            }
+            headers.update(base_fhir_headers)
         return headers
 
     def delete_by_query(self, resource, qry):
-        reqargs = {}
         #pdb.set_trace()
         responses = []
         for response in self.get(f"{resource}?{qry}").entries:
@@ -157,24 +163,25 @@ class FhirClient:
             return responses[0]
         return responses
 
-    def send_request(self, verb, api_path, body, reqargs=None, headers=None):
+    def send_request_(self, verb, api_path, body=None, headers=None):
         if headers is None:
             headers = {}
+
+        # Auth requires different components of the request, depending on the
+        # auth type, so we need to pass the entire 
         if reqargs is None:
-            reqargs = {'headers': headers}
+            reqargs = {'headers': self.get_login_header(headers)}
 
         self.auth.update_request_args(reqargs)
-        headers = self.get_login_header(reqargs['headers'])
+
+        
 
         return self.client().send_request(verb, api_path, json=body, headers=headers)
 
     def delete_by_record_id(self, resource, id, silence_warnings=False):
         """Just a basic delete wrapper"""
-        reqargs = {        }
-
-        self.auth.update_request_args(reqargs)
         endpoint = f"{self.target_service_url}/{resource}/{id}"
-        success, result = self.client().send_request("delete", endpoint, **reqargs)
+        success, result = self.send_request("delete", endpoint)
         if not success and not silence_warnings:
             with log_lock:
                 self.logger.error(pformat(result))
@@ -184,13 +191,9 @@ class FhirClient:
     def update(self, resource, id, data):
         """Update the current instance by overwriting it. """
         endpoint = f"{self.target_service_url}/{resource}/{id}"
-        reqargs = {
-            'json': data
-        }
-        self.auth.update_request_args(reqargs)
-        success, result = self.client().send_request(
-                                "put", endpoint, 
-                                **reqargs)
+
+        success, result = self.send_request(
+                                "put", endpoint, json=data)
 
         return result
 
@@ -198,19 +201,17 @@ class FhirClient:
         """Patch in partial changes to an existing record rather than overwriting everything. 
         
            Please note that this accepts json-patch data and not a traditional fhir record"""
-        headers = self.get_login_header()
-        headers['Content-Type'] = 'application/json-patch+json'
-        headers['Prefer'] = 'return=representation'
-        reqargs = {
-            'headers': headers,
-            'json': data
+        headers = {
+            'Content-Type': 'application/json-patch+json',
+            'Prefer': 'return=representation'
         }
-        self.auth.update_request_args(reqargs)
+
         endpoint = f"{self.target_service_url}/{resource}/{id}"
         success, result = self.client().send_request(
                                 "patch", 
                                 endpoint, 
-                                **reqargs)
+                                json=data,
+                                headers=headers)
 
         return result        
 
@@ -254,18 +255,13 @@ class FhirClient:
                             else:
                                 print(f"There was a problem deleting the resource, {response['resource']['id']} / {gendpoint}")
 
-            kwargs = {
-                'json': obj
-            }
-
-            self.auth.update_request_args(kwargs)       
             if validate_only:
                 endpoint += "/$validate"
 
-            success, result = self.client().send_request(
+            success, result = self.send_request(
                                 verb, 
                                 endpoint, 
-                                **kwargs)
+                                json=obj)
 
             return result        
 
@@ -291,12 +287,7 @@ class FhirClient:
         if not isinstance(objs, list):
             objs = [data]
 
-        for obj in objs:
-            kwargs = {
-                'json': obj
-            }
-            
-            self.auth.update_request_args(kwargs)            
+        for obj in objs:          
             endpoint = f"{self.target_service_url}/{resource}"
             if resource == 'Bundle':
                 endpoint = self.target_service_url
@@ -330,16 +321,15 @@ class FhirClient:
                 verb = "PUT"
 
                 endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
-                kwargs['json'] = obj
 
             if retry_count is None:
                 retry_count = FhirClient.retry_post_count
 
             while retry_count > 0:
-                success, result = self.client().send_request(
+                success, result = self.send_request(
                                     verb, 
                                     endpoint, 
-                                    **kwargs)
+                                    json=obj)
 
                 # 422 just means something was preventing it from succeeding, so 
                 # it could be the db hasn't caught up yet, so we'll sleep for a second and
@@ -362,7 +352,7 @@ class FhirClient:
 
             return result
 
-    def get(self, resource, recurse=True, rec_count=-1, raw_result=False, reqargs=None, except_on_error=True):
+    def get(self, resource, recurse=True, rec_count=-1, raw_result=False, headers=None, except_on_error=True):
         """Wrapper for basic http:get
 
         :param resource: FHIR Resource type 
@@ -386,17 +376,12 @@ class FhirClient:
             if "?" in resource:
                 count = f"&_count={rec_count}"
 
-        if reqargs is None:
-            reqargs = {}
-
-        self.auth.update_request_args(reqargs)    
-
         if resource[0:4] == "http":
             url = f"{resource}{count}"
         else:
             url = f"{self.target_service_url}/{resource}{count}"
 
-        success, result = self.client().send_request("GET", f"{url}", **reqargs)
+        success, result = self.send_request("GET", f"{url}", headers=headers)
 
         # We'll skip printing this if we return the error to the calling function
         if not success and except_on_error:
@@ -413,7 +398,7 @@ class FhirClient:
 
         # Follow paginated results if so desired
         while recurse and content.next is not None:
-            success, result = self.client().send_request("GET", content.next,  **reqargs)
+            success, result = self.send_request("GET", content.next, headers=headers)
 
             ExceptOnFailure(success, url, result)
             content.append(result)
@@ -449,3 +434,104 @@ class FhirClient:
             sleep(sleep_time)
             print(".", end='', flush=True)
 
+    # The next few methods are pulled form the KF client object. These should be 
+    # revisited to make sure we really need them and that they work as well as 
+    # they can, but for now, they are used by the send_request function. 
+    def _errors_from_response(self, response_body):
+        """
+        Comb list of issues in FHIR response and return the ones marked error
+        """
+        response_body = response_body or {}
+        try:
+            return [
+                issue
+                for issue in response_body.get("issue", [])
+                if issue["severity"] == "error"
+            ]
+        except:
+            print(response_body)
+            pdb.set_trace()
+
+
+    def _response_content(self, response):
+        """
+        Try to parse response body as JSON, otherwise return the
+        text version of body
+        """
+        try:
+            resp_content = response.json()
+        except json.decoder.JSONDecodeError:
+            resp_content = response.text
+        return resp_content
+
+    def send_request(self, request_method_name, url, **request_kwargs):
+        """
+        Send request to the FHIR validation server. Return a tuple
+        (success boolean, result dict).
+
+        The success boolean represents whether the request was sucessful AND
+        valid by the FHIR specification. The request is valid if there are no
+        errors in the issues list of the response.
+
+        The result dict looks like this:
+
+            {
+                'status_code': response.status_code,
+                'response': response.json() or response.text,
+                'response_headers': response.headers,
+            }
+
+        :param request_method_name: requests method name
+        :type request_method_name: str
+        :param url: FHIR url
+        :type url: str
+        :param request_kwargs: optional request keyword args
+        :type request_kwargs: key, value pairs
+        :returns: tuple of the form
+        (success boolean, result dict)
+        """
+        success = False
+
+        headers = self.get_login_header(headers = request_kwargs.get("headers"))
+        request_kwargs["headers"] = headers
+        self.auth.update_request_args(request_kwargs)
+
+        # Send request
+        request_method = getattr(self.session, request_method_name.lower())
+        response = request_method(url, **request_kwargs)
+        resp_content = self._response_content(response)
+
+        # Determine success and log result
+        request_method_name = request_method_name.upper()
+        request_url = urllib.parse.unquote(response.url)
+
+        if response.ok:
+            errors = self._errors_from_response(resp_content)
+            if not errors:
+                success = True
+                self.logger.info(
+                    f"{request_method_name} {request_url} succeeded. "
+                )
+            else:
+                self.logger.error(
+                    f"{request_method_name} {request_url} failed. "
+                )
+        else:
+            #pdb.set_trace()
+            if request_method_name.lower() == 'POST':
+                print(pformat(f"There was an issue with the POST: \n{request_kwargs['json']}"))
+                print(pformat(response.json()))
+            self.logger.error(
+                f"{request_method_name} {request_url} failed, "
+                f"status {response.status_code}. "
+            )
+
+        return (
+            success,
+            {
+                "status_code": response.status_code,
+                "request_url": request_url,
+                "response": resp_content,
+                "response_headers": response.headers,
+            },
+        )
