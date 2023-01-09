@@ -9,7 +9,8 @@ import subprocess
 from time import sleep
 from pprint import pformat
 from copy import deepcopy
-from json import dumps
+from json import dumps, decoder
+
 
 from threading import Lock
 from pathlib import Path
@@ -460,7 +461,7 @@ class FhirClient:
         """
         try:
             resp_content = response.json()
-        except json.decoder.JSONDecodeError:
+        except decoder.JSONDecodeError:
             resp_content = response.text
         return resp_content
 
