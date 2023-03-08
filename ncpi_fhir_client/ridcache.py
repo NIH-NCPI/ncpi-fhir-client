@@ -19,7 +19,7 @@ import re
 from collections import defaultdict
 from argparse import ArgumentParser, FileType
 
-from ncpi_fhir_client import default_resources
+from ncpi_fhir_client import default_resources, report_exception
 # The get_id will be run inside a thread, so I guess we need to protect it...not really sure
 # if the read can be interrupted. Probably not but it should be reasonably fast. 
 from threading import Lock
@@ -142,7 +142,10 @@ class RIdCache:
         :param entity_key: source unique key for this entity
         :type entity_key: str
         """
-        result = self.cache[target_system].get(entity_key)
+        try:
+            result = self.cache[target_system].get(entity_key)
+        except Exception as ex:
+            report_exception(ex, msg=f"{target_system} : {entity_key}")
 
         if resource_type is not None and result is not None:
             assert resource_type == result[0], f"{resource_type} != {result[0]}"

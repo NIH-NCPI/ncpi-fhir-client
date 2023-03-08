@@ -4,6 +4,8 @@ import pdb
 import requests
 from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
+import traceback
+import sys
 
 __version__ = "0.1.1"
 
@@ -34,7 +36,14 @@ def default_resources(host, ignore_resources=['Bundle'], reset=False):
                         _default_resources.append(resource['type'])
 
     return [x for x in _default_resources if x not in ignore_resources]
-    
+
+def report_exception(ex, msg):
+    tb_lines = traceback.format_exception(ex.__class__, ex, ex.__traceback__)
+    tb_text = ''.join(tb_lines)
+    print(tb_text)
+    print(f"\n\n{msg}")
+    sys.exit(1)
+
 # Stolen from KF FHIR Utility: 
 def requests_retry_session(
     session=None,
