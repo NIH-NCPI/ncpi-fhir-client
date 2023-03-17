@@ -273,7 +273,8 @@ class FhirClient:
                     identifier=None, 
                     identifier_system=None, 
                     identifier_type='identifier', 
-                    retry_count=None):
+                    retry_count=None, 
+                    skip_insert_if_present=False):
         """Basic POST wrapper
         
            validate_only will append the $validate to the end of the final url
@@ -317,6 +318,11 @@ class FhirClient:
                             entry = result.entries[0]
                             id = entry['resource']['id']
                             obj['id'] = id
+                            if skip_insert_if_present:
+                                # Just fake a successful create
+                                return {
+                                    'status_code': 200
+                                }
     
             if 'id' in obj and resource != "Bundle":
                 verb = "PUT"
