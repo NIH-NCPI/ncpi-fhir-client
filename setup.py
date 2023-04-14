@@ -12,5 +12,10 @@ setup(
     description=f"NCPI FHIR Client {__version__}",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=requirements
+    install_requires=requirements,
+    entry_points={
+        'console_scripts': [
+            'fhirq = ncpi_fhir_client.fhir_client:exec'
+        ]
+    }
 )
