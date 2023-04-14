@@ -7,6 +7,10 @@ from requests.adapters import HTTPAdapter
 import traceback
 import sys
 
+from pathlib import Path
+from yaml import safe_load
+from rich import print
+
 __version__ = "0.1.1"
 
 _default_resources = None
@@ -84,3 +88,8 @@ def requests_retry_session(
     session.mount("https://", adapter)
 
     return session
+
+def die_if(do_die, msg, errnum=1):
+    if do_die:
+        sys.stderr.write(msg + "\n")
+        sys.exit(errnum)

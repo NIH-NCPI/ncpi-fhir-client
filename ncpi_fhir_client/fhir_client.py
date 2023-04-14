@@ -4,19 +4,24 @@ import pdb
 logger = logging.getLogger(__name__)
 #from ncpi_fhir_utility.client import FhirApiClient
 
+from rich import print
+
 from ncpi_fhir_client import requests_retry_session
 import subprocess
 from time import sleep
 from pprint import pformat
 from copy import deepcopy
-from json import dumps, decoder
+from json import dump, dumps, decoder
 
-
+from datetime import datetime
 from threading import Lock
 from pathlib import Path
 
 from ncpi_fhir_client.fhir_auth import get_auth
 from ncpi_fhir_client.fhir_result import FhirResult
+from ncpi_fhir_client.host_config import get_host_config
+
+from argparse import ArgumentParser, FileType
 
 import urllib3
 import sys
@@ -542,3 +547,85 @@ class FhirClient:
                 "response_headers": response.headers,
             },
         )
+
+def exec():
+    host_config = get_host_config()
+    # Just capture the available environments to let the user
+    # make the selection at runtime
+    env_options = sorted(host_config.keys())
+
+    parser = ArgumentParser(
+        description="Basic FHIR Query tool. "
+    )
+    parser.add_argument(
+        "--host",
+        choices=env_options,
+        default=None,
+        required=True,
+        help=f"Remote configuration to be used to access the FHIR server. If no environment is provided, the system will stop after generating the whistle output (no validation, no loading)",
+    )
+    parser.add_argument(
+        "--out", 
+        "-o", 
+        type=FileType('wt'),
+        help=f"Output log (will be JSON file format) for resources matching queries. If not provided, the output is only streamed to standard out."
+    )
+
+    args = parser.parse_args(sys.argv[1:])
+    fhir_client = FhirClient(host_config[args.host])
+
+    print(f"FHIR Server: {fhir_client.target_service_url}")
+
+    out_log = args.out
+    if out_log is not None:
+        out_log.write("[\n  ")
+        dump({
+            "FHIR Server": fhir_client.target_service_url,
+            "Time Stamp": str(datetime.now()),
+        }, out_log, indent=2)
+        out_log.write(",\n  ")
+
+    do_continue = True
+    query_count = 0
+
+    while do_continue:
+        try:
+            qry = input("FHIR Query (or 'exit'): ")
+            do_continue = qry.lower() != 'exit'
+
+            if do_continue:
+                start_time = datetime.now()
+                response = fhir_client.get(qry, except_on_error=False)
+                query_time = datetime.now()
+
+                if out_log is not None:
+                    if query_count > 0:
+                        out_log.write(",\n")
+                    out_log.write("  ")
+
+                if response.success():
+                    dump({
+                        "Query": qry,
+                        "Query Time": str(query_time-start_time),
+                        "Time Stamp": str(datetime.now()),
+                        "Status Code": response.status_code,
+                        "Record Count": len(response.entries),
+                        "Entries": response.entries
+                    }, out_log, indent=2)
+                    print(response.entries)
+                else:
+                    dump({
+                        "Query": qry,                         
+                        "Query Time": str(query_time-start_time),
+                        "Time Stamp": str(datetime.now()),
+                        "Status Code": response.status_code,
+                        "Response": response.response
+                    }, out_log, indent=2)
+                    print(f"ERROR: {response.response['issue']}")
+                query_count += 1
+
+        except:
+            do_continue = False
+
+    if out_log:
+        out_log.write("\n]\n")

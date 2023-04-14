@@ -46,7 +46,7 @@ def get_identifier(resource):
     return idnt
 
 class RIdCache:
-    def __init__(self, study_id, resource_types = None, valid_patterns = None):
+    def __init__(self, study_id=None, resource_types = None, valid_patterns = None):
         """
         :param resource_types: List of FHIR Resource types expected to be encountered
         :type resource_types: List of strings
@@ -84,8 +84,11 @@ class RIdCache:
         if self.resource_types is None:
             self.resource_types = default_resources(fhir_client, ignore_resources=_ignored_resource_types)
 
+        ids_found = 0
         for resource_type in self.resource_types:
-            self.load_ids_for_resource_type(fhir_client, resource_type)
+            ids_found += self.load_ids_for_resource_type(fhir_client, resource_type)
+
+        print(f"{len(self.resource_types)} Resource types found: {ids_found} ids.")
 
         if len(self.missing_identifiers) > 0:
             print("\n** Some resourceTypes had records without valid identifiers:")
@@ -106,7 +109,14 @@ class RIdCache:
         #if resource_type == "Observation":
         #    print("Observing the observations")
         #    pdb.set_trace()
-        result = fhir_client.get(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
+        params = ["_elements=identifier,id","_count=200"]
+        if self.study_id is not None:
+            params = [f"_tag={self.study_id}"] + params
+            
+        params = "&".join(params)
+        #result = fhir_client.get(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
+
+        result = fhir_client.get(f"{resource_type}?{params}")
         #pdb.set_trace()
         record_count = 0
         if result.success():
@@ -131,6 +141,8 @@ class RIdCache:
                         self.missing_identifiers[resource_type].append(resource)
         if record_count > 0:
             print(f"{record_count} ids found for {resource_type}")
+
+        return record_count
 
 
     def get_id(self, target_system, entity_key, resource_type=None):
