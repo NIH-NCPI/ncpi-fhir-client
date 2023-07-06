@@ -15,6 +15,7 @@ large numbers of datasets already on board.
 """
 
 import sys
+import os
 import re
 from collections import defaultdict
 from argparse import ArgumentParser, FileType
@@ -26,8 +27,8 @@ from threading import Lock
 from pprint import pformat
 from wstlr.hostfile import load_hosts_file
 
-
 import pdb
+
 
 # id_log = open("__ID_LOG.txt", 'wt')
 
@@ -44,6 +45,18 @@ def get_identifier(resource):
     if type(idnt) is list:
         return idnt[0]
     return idnt
+
+class DuplicateIdentifierFound(Exception):
+    def __init__(self, target_system, entity_key, entity_type, target_id):
+        self.target_system = target_system
+        self.entity_key = entity_key
+        self.entity_type = entity_type
+        self.target_id = target_id
+        super().__init__(self.message())
+
+    def message(self):
+        return f"""Duplicate key found for {self.target_system}:{self.entity_key} -> {self.entity_type}/{self.target_id} exists with the same key."""
+
 
 class RIdCache:
     def __init__(self, study_id=None, resource_types = None, valid_patterns = None):
@@ -73,7 +86,7 @@ class RIdCache:
 
         self.missing_identifiers = defaultdict(list)
     
-    def load_ids_from_host(self, fhir_client):
+    def load_ids_from_host(self, fhir_client, exit_on_dupes=False):
         """
         Loads ids from the host via the client object and stores them inside the cache
         
@@ -86,7 +99,12 @@ class RIdCache:
 
         ids_found = 0
         for resource_type in self.resource_types:
-            ids_found += self.load_ids_for_resource_type(fhir_client, resource_type)
+            try:
+                ids_found += self.load_ids_for_resource_type(fhir_client, resource_type, exit_on_dupes=exit_on_dupes)
+            except DuplicateIdentifierFound as e:
+                pdb.set_trace()
+                os._exit(1)
+                print("Suicide is painless. It brings on many changes")
 
         print(f"{len(self.resource_types)} Resource types found: {ids_found} ids.")
 
@@ -104,7 +122,7 @@ class RIdCache:
                 return True
         return False
 
-    def load_ids_for_resource_type(self, fhir_client, resource_type):
+    def load_ids_for_resource_type(self, fhir_client, resource_type, exit_on_dupes=False):
         #print(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
         #if resource_type == "Observation":
         #    print("Observing the observations")
@@ -135,7 +153,7 @@ class RIdCache:
                         target_system = get_identifier(resource)['system']
                         if self.valid_system(target_system):
                             entity_key =get_identifier(resource)['value']
-                            self.store_id(resource_type, target_system, entity_key, target_id)
+                            self.store_id(resource_type, target_system, entity_key, target_id, exit_on_dupes=exit_on_dupes)
                             record_count += 1
                     except:
                         self.missing_identifiers[resource_type].append(resource)
@@ -166,7 +184,7 @@ class RIdCache:
         return result
 
     def store_id(
-        self, entity_type, target_system, entity_key, target_id, no_db=False
+        self, entity_type, target_system, entity_key, target_id, no_db=False, exit_on_dupes=False
     ):
         """
         Cache the relationship between a source unique key and its corresponding
@@ -182,10 +200,10 @@ class RIdCache:
         :type no_db: bool
         """
         with cache_lock:
-            self._store_id(entity_type, target_system, entity_key, target_id)
+            self._store_id(entity_type, target_system, entity_key, target_id, exit_on_dupes=exit_on_dupes)
 
     def _store_id(
-        self, entity_type, target_system, entity_key, target_id
+        self, entity_type, target_system, entity_key, target_id, exit_on_dupes=False
     ):
         """
         Cache the relationship between a source unique key and its corresponding
@@ -202,8 +220,17 @@ class RIdCache:
         :type no_db: bool
         """
         if target_system.split("/")[-1] != entity_type.lower():
-            print(f"{target_system}\t{entity_key}\t{entity_type}\t{target_id}\n")
-            pdb.set_trace()
+            print(f"Attempting to cache IDs that don't conform with Whistler format:")
+            print(f"System: {target_system}  Key: {entity_key}  Type: {entity_type} ID: {target_id}")
+            #pdb.set_trace()
+        
+        if entity_key in self.cache[target_system]:
+            if exit_on_dupes:
+                sys.stderr.write(f"""Duplicate key found for {target_system}:{entity_key} 
+    -> {entity_type}/{target_id} exists with the same key.\n""")
+                # This is a bit harsh, but 
+                os._exit(1)
+
         self.cache[target_system][entity_key] = (entity_type, target_id)
         # id_log.write(f"{target_system}\t{entity_key}\t{entity_type}\t{target_id}\n")
 
