@@ -56,7 +56,13 @@ def getIdentifier(resource):
 class FhirClient:
     retry_post_count = 5
     fhir_version = "4.0.1"
-    def __init__(self, cfg, idcache=None, cmdlog=None):
+
+    resource_logging = {
+        'skipped_params': set(['auth']),
+        'methods': set(["POST", "PUT", "DELETE", "PATCH"])
+    }
+
+    def __init__(self, cfg, idcache=None, cmdlog=None, exit_on_dupes=False):
         """cfg is a dictionary containing all relevant details suitable for host and authentication
         
         idcache is an optional substitute for the GET behavior we use when an entry isn't in our 
@@ -101,7 +107,24 @@ class FhirClient:
         self.bundle = None
 
         if self.idcache is not None:
-            self.idcache.load_ids_from_host(self)
+            self.idcache.load_ids_from_host(self, exit_on_dupes=exit_on_dupes)
+
+            print("Cache loaded")
+
+
+    def logwrite(self, method, url, response, **kwargs):
+        if self.rest_log:
+            if method in FhirClient.resource_logging['methods']:
+                logentry = {
+                    "method": method,
+                    "url": url,
+                    "timestamp": str(datetime.now()),
+                    "response": response
+                }
+                for k,v in kwargs.items():
+                    if k not in FhirClient.resource_logging['skipped_params']:
+                        logentry[k] = v
+                self.rest_log.write(dumps(logentry, sort_keys=True, indent=2) + "\n")
         
     def init_log(self):
         """make sure this uses the current logging, which probably changes based on user's input"""
@@ -271,6 +294,32 @@ class FhirClient:
 
             return result        
 
+    # WARNING- This is experimental
+    def basic_post(self, command="$reindex", data=None):
+        # if the command is a fully formed URL, no need to change it
+        if command[0:4] == "http":
+            endpoint = command
+
+        else:
+            endpoint_pieces = [self.target_service_url, command]
+            sep = "/"
+            if command[0] == ':':
+                sep = ""
+
+            endpoint = sep.join(endpoint_pieces)
+        verb="POST"
+        pdb.set_trace()
+        success, result = self.send_request(
+                                    verb, 
+                                    endpoint,
+                                    json=data)
+        print(result)
+        pdb.set_trace()
+        
+        if not success:
+            print("There was a problem with the request for the GET")
+            pdb.set_trace()
+
     def post(self, 
                     resource, 
                     data, 
@@ -314,12 +363,16 @@ class FhirClient:
                     id = self.idcache.get_id(id_system, id_value, resource)
                     if id is not None:
                         obj['id'] = id
+                    else:
+                        pass
 
                 else:
                     result = self.get(f"{resource}?{identifier_type}={identifier}")
                     # If it wasn't found, then we just plan to create
                     if result.success():
                         if result.entry_count > 0:
+                            print(f"get returned more than one ({result.entry_count}) resource: {identifier}")
+                            pdb.set_trace()
                             entry = result.entries[0]
                             id = entry['resource']['id']
                             obj['id'] = id
@@ -521,15 +574,19 @@ class FhirClient:
             errors = self._errors_from_response(resp_content)
             if not errors:
                 success = True
+                self.logwrite(request_method_name, url, response.status_code, **request_kwargs)
                 self.logger.info(
                     f"{request_method_name} {request_url} succeeded. "
                 )
             else:
+                self.logwrite(request_method_name, url, errors, **request_kwargs)
                 self.logger.error(
                     f"{request_method_name} {request_url} failed. "
                 )
         else:
-            #pdb.set_trace()
+            self.logwrite(request_method_name, url, response.status_code, **request_kwargs)
+            self.logwrite(request_method_name, url, resp_content, **request_kwargs)
+
             if request_method_name.lower() == 'POST':
                 print(pformat(f"There was an issue with the POST: \n{request_kwargs['json']}"))
                 print(pformat(response.json()))
@@ -594,6 +651,7 @@ def exec():
             do_continue = qry.lower() != 'exit'
 
             if do_continue:
+                pdb.set_trace()
                 start_time = datetime.now()
                 response = fhir_client.get(qry, except_on_error=False)
                 query_time = datetime.now()
