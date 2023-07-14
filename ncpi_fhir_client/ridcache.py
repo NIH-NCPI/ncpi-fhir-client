@@ -25,6 +25,11 @@ from ncpi_fhir_client import default_resources, report_exception
 # if the read can be interrupted. Probably not but it should be reasonably fast. 
 from threading import Lock
 from pprint import pformat
+from rich import print
+from rich.console import Console
+from rich.table import Table
+from rich.progress import track
+
 from wstlr.hostfile import load_hosts_file
 
 import pdb
@@ -75,6 +80,9 @@ class RIdCache:
         self.resource_types = resource_types
         self.valid_patterns = []
         self.study_id = study_id
+        # log IDs encountered which don't conform to the whistle 
+        # format 
+        self.malformed_ids = set()      
 
         if valid_patterns is not None:
             for pattern in valid_patterns:
@@ -97,21 +105,43 @@ class RIdCache:
         if self.resource_types is None:
             self.resource_types = default_resources(fhir_client, ignore_resources=_ignored_resource_types)
 
+
+        table = Table(title=f"Resource Loading: {fhir_client.target_service_url}")
+        table.add_column("Resource Type", justify = "right", style="cyan")
+        table.add_column("ID Count", justify="left", style="yellow")
         ids_found = 0
-        for resource_type in self.resource_types:
+        for resource_type in track(self.resource_types, f"Loading IDs for {len(self.resource_types)} resource types"):
             try:
-                ids_found += self.load_ids_for_resource_type(fhir_client, resource_type, exit_on_dupes=exit_on_dupes)
+                id_count = self.load_ids_for_resource_type(fhir_client, resource_type, exit_on_dupes=exit_on_dupes)
+                if id_count > 0:
+                    table.add_row(resource_type, str(id_count))
+                ids_found += id_count
             except DuplicateIdentifierFound as e:
                 pdb.set_trace()
                 os._exit(1)
-                print("Suicide is painless. It brings on many changes")
+        console = Console()
+        console.print(table, justify="center")
 
         print(f"{len(self.resource_types)} Resource types found: {ids_found} ids.")
 
+        if len(self.malformed_ids) > 0:
+            table = Table(title=f"{len(self.malformed_ids)} malformed IDs found")
+            table.add_column("system", justify = "right", style="blue")
+            table.add_column("ID", justify = "right", style="yellow")
+            for id in sorted(list(self.malformed_ids))[0:5]:
+                system, resource_id = id.split("|")
+                table.add_row(system, resource_id)
+            console.print(table, justify="center")
+
         if len(self.missing_identifiers) > 0:
-            print("\n** Some resourceTypes had records without valid identifiers:")
+            table = Table(title=f"{len(self.missing_identifiers)} resources had missing Identifiers")
+            table.add_column("Resource Type", justify = "right", style="cyan")
+            table.add_column("Resource Count", justify = "left", style="yellow")
+
             for resourceType in self.missing_identifiers.keys():
-                print(f"\t{resourceType} : {len(self.missing_identifiers[resourceType])}")
+                table.add_row(resourceType, str(len(self.missing_identifiers[resourceType])))
+
+            console.print(table, justify="center")
 
     def valid_system(self, target_system):
         if len(self.valid_patterns) == 0:
@@ -157,8 +187,6 @@ class RIdCache:
                             record_count += 1
                     except:
                         self.missing_identifiers[resource_type].append(resource)
-        if record_count > 0:
-            print(f"{record_count} ids found for {resource_type}")
 
         return record_count
 
@@ -220,8 +248,9 @@ class RIdCache:
         :type no_db: bool
         """
         if target_system.split("/")[-1] != entity_type.lower():
-            print(f"Attempting to cache IDs that don't conform with Whistler format:")
-            print(f"System: {target_system}  Key: {entity_key}  Type: {entity_type} ID: {target_id}")
+            self.malformed_ids.add(f"{target_system}|{entity_key}")
+            #print(f"Attempting to cache IDs that don't conform with Whistler format:")
+            #print(f"System: {target_system}  Key: {entity_key}  Type: {entity_type} ID: {target_id}")
             #pdb.set_trace()
         
         if entity_key in self.cache[target_system]:
