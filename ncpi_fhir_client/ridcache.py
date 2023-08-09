@@ -105,7 +105,6 @@ class RIdCache:
         if self.resource_types is None:
             self.resource_types = default_resources(fhir_client, ignore_resources=_ignored_resource_types)
 
-
         table = Table(title=f"Resource Loading: {fhir_client.target_service_url}")
         table.add_column("Resource Type", justify = "right", style="cyan")
         table.add_column("ID Count", justify="left", style="yellow")
