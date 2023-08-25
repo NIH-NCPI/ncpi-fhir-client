@@ -404,6 +404,9 @@ class FhirClient:
                 if result['status_code'] not in [422, 409] :
                     retry_count = 0
                 else:
+                    print(f"Request failed with {result['status_code']}")
+                    pdb.set_trace()
+
                     sleep(1)
                     print(pformat(data))
                     print("------------------")
@@ -563,6 +566,10 @@ class FhirClient:
 
         # Send request
         request_method = getattr(self.session, request_method_name.lower())
+
+        #print(request_kwargs)
+        #print(url)
+        #pdb.set_trace()
         response = request_method(url, **request_kwargs)
         resp_content = self._response_content(response)
 
@@ -604,6 +611,33 @@ class FhirClient:
                 "response_headers": response.headers,
             },
         )
+
+    def send_raw_request(self, verb, url, header, data=None, parameters=None):
+        #pdb.set_trace()
+        request_kwargs = {
+            'headers' : self.get_login_header(headers = header)
+        }
+        self.auth.update_request_args(request_kwargs)
+        headers = request_kwargs['headers']
+
+        curlit = ["curl -X POST"]
+        for header in headers:
+            curlit.append(f" -H '{header}: {headers[header]}'")
+        curlit.append(f"--data {data}")
+        curlit.append(url)
+        print("-----------------------")
+        print(" ".join(curlit))
+        print("-----------------------")
+        print(headers)
+        print(data)
+        print(headers)
+        response = self.session.request(verb, url, headers=headers, json=data)
+        resp_content = self._response_content(response)
+        print(resp_content)
+
+        pdb.set_trace()
+
+        return resp_content
 
 def exec():
     host_config = get_host_config()
