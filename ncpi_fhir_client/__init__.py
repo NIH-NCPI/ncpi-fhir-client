@@ -11,18 +11,17 @@ from pathlib import Path
 from yaml import safe_load
 from rich import print
 
-__version__ = "0.1.1"
-
 _default_resources = None
 
-# Google seems to respond with some resources that it doesn't support queries for, 
+# Google seems to respond with some resources that it doesn't support queries for,
 # so, since we are in a bit of a hurry, I'm just stashing those types here until
 # I can dig deeper into a possible way to identify resources that aren't queryable
-_invalid_resource_types = ['DomainResource', 'Resource']
+_invalid_resource_types = ["DomainResource", "Resource"]
 import pdb
 
-def default_resources(host, ignore_resources=['Bundle'], reset=False):
-    global _default_resources 
+
+def default_resources(host, ignore_resources=["Bundle"], reset=False):
+    global _default_resources
 
     if reset or (_default_resources is not None and len(_default_resources) == 0):
         _default_resources = None
@@ -32,23 +31,25 @@ def default_resources(host, ignore_resources=['Bundle'], reset=False):
         _default_resources = []
 
         cs = response.entries[0]
-        for restful_entry in cs['rest']:
-            if 'resource' in restful_entry:
-                for resource in restful_entry['resource']:
+        for restful_entry in cs["rest"]:
+            if "resource" in restful_entry:
+                for resource in restful_entry["resource"]:
                     # pdb.set_trace()
-                    if resource['type'] not in _invalid_resource_types:
-                        _default_resources.append(resource['type'])
+                    if resource["type"] not in _invalid_resource_types:
+                        _default_resources.append(resource["type"])
 
     return [x for x in _default_resources if x not in ignore_resources]
 
+
 def report_exception(ex, msg):
     tb_lines = traceback.format_exception(ex.__class__, ex, ex.__traceback__)
-    tb_text = ''.join(tb_lines)
+    tb_text = "".join(tb_lines)
     print(tb_text)
     print(f"\n\n{msg}")
     sys.exit(1)
 
-# Stolen from KF FHIR Utility: 
+
+# Stolen from KF FHIR Utility:
 def requests_retry_session(
     session=None,
     total=10,
@@ -88,6 +89,7 @@ def requests_retry_session(
     session.mount("https://", adapter)
 
     return session
+
 
 def die_if(do_die, msg, errnum=1):
     if do_die:
