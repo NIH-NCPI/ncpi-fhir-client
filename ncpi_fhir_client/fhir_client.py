@@ -271,8 +271,6 @@ class FhirClient:
                             return {'status_code': 201, 'response':response}
                         if 'id' not in obj:
                             obj['id'] = response['resource']['id']
-                            verb = 'PUT'
-                            endpoint =  f"{self.target_service_url}/{resource}/{obj['id']}"
                         else:
                             # Only delete if we encounter the same thing more than once
                             del_response = None
@@ -286,6 +284,13 @@ class FhirClient:
 
             if validate_only:
                 endpoint += "/$validate"
+            else:
+                # The Publisher does assign ids which are used by the 
+                # ImplementationGuide.json resource
+                if 'id' in obj:
+                    verb = "PUT"
+                    endpoint =  f"{self.target_service_url}/{resource}/{obj['id']}"
+            
 
             success, result = self.send_request(
                                 verb, 
@@ -347,49 +352,51 @@ class FhirClient:
             endpoint = f"{self.target_service_url}/{resource}"
             if resource == 'Bundle':
                 endpoint = self.target_service_url
+
             if validate_only:
                 endpoint += "/$validate"
 
             verb = "POST"
-            if identifier is not None:
-
-                if self.idcache:
-                    if identifier_system is not None:
-                        id_system = identifier_system
-                        id_value = identifier
-                    else:
-                        id_system = identifier.split("|")[0]
-                        id_value = "|".join(identifier.split("|")[1:])
-                    id = self.idcache.get_id(id_system, id_value, resource)
-                    if id is not None:
-                        obj['id'] = id
-                    else:
-                        pass
-
-                else:
-                    result = self.get(f"{resource}?{identifier_type}={identifier}")
-                    # If it wasn't found, then we just plan to create
-                    if result.success():
-                        if result.entry_count > 0:
-                            print(f"get returned more than one ({result.entry_count}) resource: {identifier}")
-                            pdb.set_trace()
-                            entry = result.entries[0]
-                            id = entry['resource']['id']
+            if not validate_only:
+                if identifier is not None:
+                    if self.idcache:
+                        if identifier_system is not None:
+                            id_system = identifier_system
+                            id_value = identifier
+                        else:
+                            id_system = identifier.split("|")[0]
+                            id_value = "|".join(identifier.split("|")[1:])
+                        id = self.idcache.get_id(id_system, id_value, resource)
+                        if id is not None:
                             obj['id'] = id
-                            if skip_insert_if_present:
-                                # Just fake a successful create
-                                return {
-                                    'status_code': 200
-                                }
-    
-            if 'id' in obj and resource != "Bundle":
-                verb = "PUT"
+                        else:
+                            pass
 
-                endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
+                    else:
+                        result = self.get(f"{resource}?{identifier_type}={identifier}")
+                        # If it wasn't found, then we just plan to create
+                        if result.success():
+                            if result.entry_count > 0:
+                                print(f"get returned more than one ({result.entry_count}) resource: {identifier}")
+                                pdb.set_trace()
+                                entry = result.entries[0]
+                                id = entry['resource']['id']
+                                obj['id'] = id
+                                if skip_insert_if_present:
+                                    # Just fake a successful create
+                                    return {
+                                        'status_code': 200
+                                    }
+        
+                if 'id' in obj and resource != "Bundle":
+                    verb = "PUT"
+
+                    endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
 
             if retry_count is None:
                 retry_count = FhirClient.retry_post_count
 
+            #pdb.set_trace()
             while retry_count > 0:
                 success, result = self.send_request(
                                     verb, 
