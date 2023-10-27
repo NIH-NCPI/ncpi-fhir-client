@@ -689,7 +689,7 @@ def exec():
 
     while do_continue:
         try:
-            if len(args.query) == 0:
+            if args.query is None or len(args.query) == 0:
                 qry = input("FHIR Query (or 'exit'): ")
                 do_continue = qry.lower() != 'exit'
             else:
@@ -714,6 +714,9 @@ def exec():
                         "Record Count": len(response.entries),
                         "Entries": response.entries
                     }, out_log, indent=2)
+                    if args.out is not None:
+                        print(response.entries[0:2])
+                        print(f"Total Responses: {len(response.entries)}")
                 else:
                     dump({
                         "Query": qry,                         
