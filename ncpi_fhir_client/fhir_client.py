@@ -56,6 +56,7 @@ def getIdentifier(resource):
 class FhirClient:
     retry_post_count = 5
     fhir_version = "4.0.1"
+    #fhir_version = "4.3.0"
 
     resource_logging = {
         'skipped_params': set(['auth']),
@@ -73,7 +74,6 @@ class FhirClient:
 
         When idcache is not in use, we'll fall back onto the GET approach
         """
-        #pdb.set_trace()
 
         self.host_desc = cfg.get('host_desc')
         self.auth = get_auth(cfg)
@@ -148,7 +148,6 @@ class FhirClient:
             if self.write_comma: 
                 self.bundle.write(",")
             self.write_comma = True
-            #pdb.set_trace()
             resource_data = dumps(resource)
             full_url = f"""{self.target_service_url}/{resource['resourceType']}/{resource['id']}"""
             self.bundle.write("""    {
@@ -183,7 +182,6 @@ class FhirClient:
         return headers
 
     def delete_by_query(self, resource, qry):
-        #pdb.set_trace()
         responses = []
         for response in self.get(f"{resource}?{qry}").entries:
             if "resource" in response:
@@ -265,7 +263,7 @@ class FhirClient:
                 gendpoint = f"{resource}?url={url}"
                 entries = self.get(gendpoint).entries
                 for response in entries:
-                    #pdb.set_trace()
+
                     if "resource" in response:
                         if skip_insert_if_present:
                             return {'status_code': 201, 'response':response}
@@ -378,7 +376,7 @@ class FhirClient:
                         if result.success():
                             if result.entry_count > 0:
                                 print(f"get returned more than one ({result.entry_count}) resource: {identifier}")
-                                pdb.set_trace()
+                                #pdb.set_trace()
                                 entry = result.entries[0]
                                 id = entry['resource']['id']
                                 obj['id'] = id
@@ -396,7 +394,6 @@ class FhirClient:
             if retry_count is None:
                 retry_count = FhirClient.retry_post_count
 
-            #pdb.set_trace()
             while retry_count > 0:
                 success, result = self.send_request(
                                     verb, 
@@ -412,7 +409,7 @@ class FhirClient:
                     retry_count = 0
                 else:
                     print(f"Request failed with {result['status_code']}")
-                    pdb.set_trace()
+                    #pdb.set_trace()
 
                     sleep(1)
                     print(pformat(data))
@@ -525,7 +522,7 @@ class FhirClient:
             ]
         except:
             print(response_body)
-            pdb.set_trace()
+            #pdb.set_trace()
 
 
     def _response_content(self, response):
@@ -574,9 +571,6 @@ class FhirClient:
         # Send request
         request_method = getattr(self.session, request_method_name.lower())
 
-        #print(request_kwargs)
-        #print(url)
-        #pdb.set_trace()
         response = request_method(url, **request_kwargs)
         resp_content = self._response_content(response)
 
@@ -620,7 +614,6 @@ class FhirClient:
         )
 
     def send_raw_request(self, verb, url, header, data=None, parameters=None):
-        #pdb.set_trace()
         request_kwargs = {
             'headers' : self.get_login_header(headers = header)
         }
@@ -641,8 +634,6 @@ class FhirClient:
         response = self.session.request(verb, url, headers=headers, json=data)
         resp_content = self._response_content(response)
         print(resp_content)
-
-        pdb.set_trace()
 
         return resp_content
 
@@ -669,13 +660,23 @@ def exec():
         help=f"Output log (will be JSON file format) for resources matching queries. If not provided, the output is only streamed to standard out."
     )
 
+    parser.add_argument(
+        "-q",
+        "--query",
+        action="append",
+        type=str,
+        help="A query to pass to the host. You need only the portion starting with the resource type. "
+    )
+
     args = parser.parse_args(sys.argv[1:])
     fhir_client = FhirClient(host_config[args.host])
 
     print(f"FHIR Server: {fhir_client.target_service_url}")
 
     out_log = args.out
-    if out_log is not None:
+    if out_log is None:
+        out_log = sys.stdout
+    if args.out is not None:
         out_log.write("[\n  ")
         dump({
             "FHIR Server": fhir_client.target_service_url,
@@ -688,16 +689,18 @@ def exec():
 
     while do_continue:
         try:
-            qry = input("FHIR Query (or 'exit'): ")
-            do_continue = qry.lower() != 'exit'
+            if len(args.query) == 0:
+                qry = input("FHIR Query (or 'exit'): ")
+                do_continue = qry.lower() != 'exit'
+            else:
+                qry = args.query[query_count]
 
             if do_continue:
-                pdb.set_trace()
                 start_time = datetime.now()
                 response = fhir_client.get(qry, except_on_error=False)
                 query_time = datetime.now()
 
-                if out_log is not None:
+                if args.out is not None:
                     if query_count > 0:
                         out_log.write(",\n")
                     out_log.write("  ")
@@ -711,7 +714,6 @@ def exec():
                         "Record Count": len(response.entries),
                         "Entries": response.entries
                     }, out_log, indent=2)
-                    print(response.entries)
                 else:
                     dump({
                         "Query": qry,                         
@@ -726,5 +728,5 @@ def exec():
         except:
             do_continue = False
 
-    if out_log:
+    if args.out:
         out_log.write("\n]\n")
