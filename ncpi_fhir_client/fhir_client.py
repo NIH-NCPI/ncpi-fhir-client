@@ -2,7 +2,7 @@ import logging
 import pdb
 
 logger = logging.getLogger(__name__)
-#from ncpi_fhir_utility.client import FhirApiClient
+# from ncpi_fhir_utility.client import FhirApiClient
 
 from rich import print
 
@@ -27,6 +27,7 @@ import urllib3
 import sys
 
 import urllib.parse
+
 urllib3.disable_warnings()
 http = urllib3.PoolManager(maxsize=64)
 
@@ -36,46 +37,49 @@ log_lock = Lock()
 
 class InvalidCall(Exception):
     def __init__(self, url, response):
-        self.status_code = response['status_code']
+        self.status_code = response["status_code"]
         self.url = url
         self.response = response
 
         super().__init__(f"HTTP {self.status_code} encountered ({url})")
 
+
 def ExceptOnFailure(success, url, response):
     if not success:
         raise InvalidCall(url, response)
 
+
 def getIdentifier(resource):
-    idnt = resource.get('identifier')
+    idnt = resource.get("identifier")
 
     if type(idnt) is list:
         return idnt[0]
     return idnt
 
+
 class FhirClient:
     retry_post_count = 5
     fhir_version = "4.0.1"
-    #fhir_version = "4.3.0"
+    # fhir_version = "4.3.0"
 
     resource_logging = {
-        'skipped_params': set(['auth']),
-        'methods': set(["POST", "PUT", "DELETE", "PATCH"])
+        "skipped_params": set(["auth"]),
+        "methods": set(["POST", "PUT", "DELETE", "PATCH"]),
     }
 
     def __init__(self, cfg, idcache=None, cmdlog=None, exit_on_dupes=False):
         """cfg is a dictionary containing all relevant details suitable for host and authentication
-        
-        idcache is an optional substitute for the GET behavior we use when an entry isn't in our 
+
+        idcache is an optional substitute for the GET behavior we use when an entry isn't in our
         dbcache. This will allow us to get ALL ids at the start and determine right away if it is
-        present or not without the extra HTTP call. As long as new entries are going into a normal 
+        present or not without the extra HTTP call. As long as new entries are going into a normal
         ID cache, all should be fine (i.e. we can safely ignore ids that are added by the current
         application because those should be cached by another, more permanent mechanism)
 
         When idcache is not in use, we'll fall back onto the GET approach
         """
 
-        self.host_desc = cfg.get('host_desc')
+        self.host_desc = cfg.get("host_desc")
         self.auth = get_auth(cfg)
         self.logger = logger
 
@@ -85,18 +89,20 @@ class FhirClient:
         if cmdlog is not None:
             log_dir = Path(cmdlog).parent
             log_dir.mkdir(parents=True, exist_ok=True)
-            self.rest_log = open(cmdlog, 'wt')
+            self.rest_log = open(cmdlog, "wt")
 
         if self.host_desc is None:
-            self.host_desc = 'No Description'
+            self.host_desc = "No Description"
 
         self.idcache = idcache
 
         # URL associated with the host. If it's a non-standard port, use appropriate URL:XXXXX format
-        self.target_service_url = cfg.get('target_service_url')
+        self.target_service_url = cfg.get("target_service_url")
 
         self.is_valid = False
-        self._client = None         # Cache the client so we don't have to rebuild it between calls
+        self._client = (
+            None  # Cache the client so we don't have to rebuild it between calls
+        )
 
         self.is_valid = self.auth is not None
 
@@ -111,63 +117,76 @@ class FhirClient:
 
             print("Cache loaded")
 
-
     def logwrite(self, method, url, response, **kwargs):
         if self.rest_log:
-            if method in FhirClient.resource_logging['methods']:
+            if method in FhirClient.resource_logging["methods"]:
                 logentry = {
                     "method": method,
                     "url": url,
                     "timestamp": str(datetime.now()),
-                    "response": response
+                    "response": response,
                 }
-                for k,v in kwargs.items():
-                    if k not in FhirClient.resource_logging['skipped_params']:
+                for k, v in kwargs.items():
+                    if k not in FhirClient.resource_logging["skipped_params"]:
                         logentry[k] = v
                 self.rest_log.write(dumps(logentry, sort_keys=True, indent=2) + "\n")
-        
+
     def init_log(self):
         """make sure this uses the current logging, which probably changes based on user's input"""
         self.logger = logging.getLogger(__name__)
 
     def init_bundle(self, bundle_filename, bundle_id):
-        self.bundle = open(bundle_filename, 'wt')
-        self.bundle.write("""{
+        self.bundle = open(bundle_filename, "wt")
+        self.bundle.write(
+            """{
     "resourceType": "Bundle",
-    "id": \"""" + bundle_id + """\",
+    "id": \""""
+            + bundle_id
+            + """\",
     "type": "transaction",
     "entry": [
-""")
+"""
+        )
         self.write_comma = False
 
     def write_to_bundle(self, resource):
         response = deepcopy(resource)
         if self.bundle:
             # For now, let's just skip the ID so that it works in a more general sense
-            destination = f"{resource['resourceType']}" #/{resource['id']}"
-            if self.write_comma: 
+            destination = f"{resource['resourceType']}"  # /{resource['id']}"
+            if self.write_comma:
                 self.bundle.write(",")
             self.write_comma = True
             resource_data = dumps(resource)
             full_url = f"""{self.target_service_url}/{resource['resourceType']}/{resource['id']}"""
-            self.bundle.write("""    {
-      "fullUrl": \"""" + full_url + """\",
-      "resource": """ + resource_data + """,
+            self.bundle.write(
+                """    {
+      "fullUrl": \""""
+                + full_url
+                + """\",
+      "resource": """
+                + resource_data
+                + """,
       "request": {
           "method": "POST",
-          "url": \"""" + destination + """\"
+          "url": \""""
+                + destination
+                + """\"
       }
-    }""")
+    }"""
+            )
         return response
 
     def close_bundle(self):
         if self.bundle:
-            self.bundle.write("""
+            self.bundle.write(
+                """
     ]
-}""")
+}"""
+            )
             self.bundle.close()
 
-    def get_login_header(self, headers = None):
+    def get_login_header(self, headers=None):
         """Just emulating what the fhir tools library does, but it's easy to find if we decide to add to it"""
 
         if headers is None:
@@ -185,7 +204,9 @@ class FhirClient:
         responses = []
         for response in self.get(f"{resource}?{qry}").entries:
             if "resource" in response:
-                responses.append(self.delete_by_record_id(resource, response['resource']['id']))
+                responses.append(
+                    self.delete_by_record_id(resource, response["resource"]["id"])
+                )
         if len(responses) == 1:
             return responses[0]
         return responses
@@ -195,13 +216,11 @@ class FhirClient:
             headers = {}
 
         # Auth requires different components of the request, depending on the
-        # auth type, so we need to pass the entire 
+        # auth type, so we need to pass the entire
         if reqargs is None:
-            reqargs = {'headers': self.get_login_header(headers)}
+            reqargs = {"headers": self.get_login_header(headers)}
 
         self.auth.update_request_args(reqargs)
-
-        
 
         return self.client().send_request(verb, api_path, json=body, headers=headers)
 
@@ -216,31 +235,29 @@ class FhirClient:
 
     # TODO: Allow this function to pull the data first and merge changes in
     def update(self, resource, id, data):
-        """Update the current instance by overwriting it. """
+        """Update the current instance by overwriting it."""
         endpoint = f"{self.target_service_url}/{resource}/{id}"
 
-        success, result = self.send_request(
-                                "put", endpoint, json=data)
+        success, result = self.send_request("put", endpoint, json=data)
 
         return result
 
     def patch(self, resource, id, data):
-        """Patch in partial changes to an existing record rather than overwriting everything. 
-        
-           Please note that this accepts json-patch data and not a traditional fhir record"""
+        """Patch in partial changes to an existing record rather than overwriting everything.
+
+        Please note that this accepts json-patch data and not a traditional fhir record
+        """
         headers = {
-            'Content-Type': 'application/json-patch+json',
-            'Prefer': 'return=representation'
+            "Content-Type": "application/json-patch+json",
+            "Prefer": "return=representation",
         }
 
         endpoint = f"{self.target_service_url}/{resource}/{id}"
         success, result = self.client().send_request(
-                                "patch", 
-                                endpoint, 
-                                json=data,
-                                headers=headers)
+            "patch", endpoint, json=data, headers=headers
+        )
 
-        return result        
+        return result
 
     def load(self, resource, data, validate_only=False, skip_insert_if_present=False):
         objs = data
@@ -249,15 +266,15 @@ class FhirClient:
             objs = [data]
 
         for obj in objs:
-            verb = "POST"     
+            verb = "POST"
             endpoint = f"{self.target_service_url}/{resource}"
 
             # Certainly don't want to delete anything if we are just validating something
             # that may coincidentally overlap with the current resource's URL
             if not validate_only:
-                # First thing, let's go ahead and try deleting 
-                assert 'url' in obj
-                url = obj['url']
+                # First thing, let's go ahead and try deleting
+                assert "url" in obj
+                url = obj["url"]
 
                 responses = []
                 gendpoint = f"{resource}?url={url}"
@@ -266,36 +283,40 @@ class FhirClient:
 
                     if "resource" in response:
                         if skip_insert_if_present:
-                            return {'status_code': 201, 'response':response}
-                        if 'id' not in obj:
-                            obj['id'] = response['resource']['id']
+                            return {"status_code": 201, "response": response}
+                        if "id" not in obj:
+                            obj["id"] = response["resource"]["id"]
                         else:
                             # Only delete if we encounter the same thing more than once
                             del_response = None
                             retry_count = 1
-                            delrsp = self.delete_by_record_id(resource, response['resource']['id'])
-                            fresponse = self.sleep_until(gendpoint, 0, message=f"Deleting {response['resource']['id']} / {gendpoint}")
+                            delrsp = self.delete_by_record_id(
+                                resource, response["resource"]["id"]
+                            )
+                            fresponse = self.sleep_until(
+                                gendpoint,
+                                0,
+                                message=f"Deleting {response['resource']['id']} / {gendpoint}",
+                            )
                             if fresponse.success:
                                 responses.append(fresponse)
                             else:
-                                print(f"There was a problem deleting the resource, {response['resource']['id']} / {gendpoint}")
+                                print(
+                                    f"There was a problem deleting the resource, {response['resource']['id']} / {gendpoint}"
+                                )
 
             if validate_only:
                 endpoint += "/$validate"
             else:
-                # The Publisher does assign ids which are used by the 
+                # The Publisher does assign ids which are used by the
                 # ImplementationGuide.json resource
-                if 'id' in obj:
+                if "id" in obj:
                     verb = "PUT"
-                    endpoint =  f"{self.target_service_url}/{resource}/{obj['id']}"
-            
+                    endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
 
-            success, result = self.send_request(
-                                verb, 
-                                endpoint, 
-                                json=obj)
+            success, result = self.send_request(verb, endpoint, json=obj)
 
-            return result        
+            return result
 
     # WARNING- This is experimental
     def basic_post(self, command="$reindex", data=None):
@@ -306,53 +327,58 @@ class FhirClient:
         else:
             endpoint_pieces = [self.target_service_url, command]
             sep = "/"
-            if command[0] == ':':
+            if command[0] == ":":
                 sep = ""
 
             endpoint = sep.join(endpoint_pieces)
-        verb="POST"
-        pdb.set_trace()
-        success, result = self.send_request(
-                                    verb, 
-                                    endpoint,
-                                    json=data)
+        verb = "POST"
+        # pdb.set_trace()
+        success, result = self.send_request(verb, endpoint, json=data)
         print(result)
-        pdb.set_trace()
-        
+        # pdb.set_trace()
+
         if not success:
             print("There was a problem with the request for the GET")
             pdb.set_trace()
 
-    def post(self, 
-                    resource, 
-                    data, 
-                    validate_only=False, 
-                    identifier=None, 
-                    identifier_system=None, 
-                    identifier_type='identifier', 
-                    retry_count=None, 
-                    skip_insert_if_present=False):
+    def post(
+        self,
+        resource,
+        data,
+        validate_only=False,
+        identifier=None,
+        identifier_system=None,
+        identifier_type="identifier",
+        retry_count=None,
+        skip_insert_if_present=False,
+    ):
         """Basic POST wrapper
-        
-           validate_only will append the $validate to the end of the final url
-           
-           providing an identifier will result in querying for an existing record
-           and replacing it.
-           
-           If identifier finds a match or the resource object itself contains
-           an id, the endpoint will become an overwrite using PUT instead of POST """
+
+        validate_only will append the $validate to the end of the final url
+
+        providing an identifier will result in querying for an existing record
+        and replacing it.
+
+        If identifier finds a match or the resource object itself contains
+        an id, the endpoint will become an overwrite using PUT instead of POST"""
         objs = data
 
         if not isinstance(objs, list):
             objs = [data]
 
-        for obj in objs:          
+        for obj in objs:
             endpoint = f"{self.target_service_url}/{resource}"
-            if resource == 'Bundle':
+            if resource == "Bundle":
                 endpoint = self.target_service_url
 
             if validate_only:
                 endpoint += "/$validate"
+                # Currently assuming only one profile
+                if "profile" in data["meta"]:
+                    profile = data["meta"]["profile"][0]
+
+                    endpoint = f"{endpoint}?profile={profile}"
+                    print(f"Woohoo! {endpoint}")
 
             verb = "POST"
             if not validate_only:
@@ -366,7 +392,7 @@ class FhirClient:
                             id_value = "|".join(identifier.split("|")[1:])
                         id = self.idcache.get_id(id_system, id_value, resource)
                         if id is not None:
-                            obj['id'] = id
+                            obj["id"] = id
                         else:
                             pass
 
@@ -375,18 +401,18 @@ class FhirClient:
                         # If it wasn't found, then we just plan to create
                         if result.success():
                             if result.entry_count > 0:
-                                print(f"get returned more than one ({result.entry_count}) resource: {identifier}")
-                                #pdb.set_trace()
+                                print(
+                                    f"get returned more than one ({result.entry_count}) resource: {identifier}"
+                                )
+                                # pdb.set_trace()
                                 entry = result.entries[0]
-                                id = entry['resource']['id']
-                                obj['id'] = id
+                                id = entry["resource"]["id"]
+                                obj["id"] = id
                                 if skip_insert_if_present:
                                     # Just fake a successful create
-                                    return {
-                                        'status_code': 200
-                                    }
-        
-                if 'id' in obj and resource != "Bundle":
+                                    return {"status_code": 200}
+
+                if "id" in obj and resource != "Bundle":
                     verb = "PUT"
 
                     endpoint = f"{self.target_service_url}/{resource}/{obj['id']}"
@@ -395,39 +421,45 @@ class FhirClient:
                 retry_count = FhirClient.retry_post_count
 
             while retry_count > 0:
-                success, result = self.send_request(
-                                    verb, 
-                                    endpoint, 
-                                    json=obj)
+                success, result = self.send_request(verb, endpoint, json=obj)
 
-                # 422 just means something was preventing it from succeeding, so 
+                # 422 just means something was preventing it from succeeding, so
                 # it could be the db hasn't caught up yet, so we'll sleep for a second and
-                # try again. 409 means there is a conflict, which is probably some 
-                # data that is duplicated (such as ds-connect surveys that occur 
+                # try again. 409 means there is a conflict, which is probably some
+                # data that is duplicated (such as ds-connect surveys that occur
                 # more than once)
-                if result['status_code'] not in [422, 409] :
+                if result["status_code"] not in [422, 409]:
                     retry_count = 0
                 else:
                     print(f"Request failed with {result['status_code']}")
-                    #pdb.set_trace()
+                    # pdb.set_trace()
 
                     sleep(1)
                     print(pformat(data))
                     print("------------------")
-                    for issue in result['response']['issue']:
-                        if issue['severity'] == "error":
+                    for issue in result["response"]["issue"]:
+                        if issue["severity"] == "error":
                             print(pformat(issue))
-                    retry_count -= 1 
+                    retry_count -= 1
                     print(f"{result['status_code']} - {getIdentifier(obj)['value']}")
                     if retry_count > 0:
-                        print(f"Retrying {retry_count} more times" )
+                        print(f"Retrying {retry_count} more times")
 
             return result
 
-    def get(self, resource, recurse=True, rec_count=-1, raw_result=False, headers=None, except_on_error=True):
+    def get(
+        self,
+        resource,
+        recurse=True,
+        rec_count=-1,
+        raw_result=False,
+        elements=None,
+        headers=None,
+        except_on_error=True,
+    ):
         """Wrapper for basic http:get
 
-        :param resource: FHIR Resource type 
+        :param resource: FHIR Resource type
         :param recurse: Aggregate responses across pages, defaults to True
         :type recurse: Boolean
         :param rec_count: records per page, defaults to 250
@@ -441,12 +473,18 @@ class FhirClient:
         attention for less straightforward queries
         """
 
-        count=""
+        count = ""
         if rec_count > 0:
             count = f"?_count={rec_count}"
 
             if "?" in resource:
                 count = f"&_count={rec_count}"
+
+        if elements is not None:
+            if "?" in resource or "?" in count:
+                count = f"{count}&_elements={elements}"
+            else:
+                count = f"?_elements={elements}"
 
         if resource[0:4] == "http":
             url = f"{resource}{count}"
@@ -470,13 +508,16 @@ class FhirClient:
 
         # Follow paginated results if so desired
         while recurse and content.next is not None:
+            # print(content.next)
             success, result = self.send_request("GET", content.next, headers=headers)
 
             ExceptOnFailure(success, url, result)
             content.append(result)
         return content
 
-    def sleep_until(self, endpt_orig, target_count, sleep_time=5, timeout=360, message=""):
+    def sleep_until(
+        self, endpt_orig, target_count, sleep_time=5, timeout=360, message=""
+    ):
         endpt = endpt_orig
 
         n = 0
@@ -486,29 +527,33 @@ class FhirClient:
 
             if len(entries) > 0:
                 # May (or may not) be a bundle...
-                if 'resourceType' in entries[0]:
-                    if entries[0]['resourceType'] == 'Bundle':
-                        if 'entry' in entries[0]:
-                            entries = entries[0]['entry']
+                if "resourceType" in entries[0]:
+                    if entries[0]["resourceType"] == "Bundle":
+                        if "entry" in entries[0]:
+                            entries = entries[0]["entry"]
                         else:
                             entries = []
 
             entry_count = len(entries)
-            if 'total' in response.response:
-                entry_count = response.response['total']
+            if "total" in response.response:
+                entry_count = response.response["total"]
             if entry_count == target_count or n >= timeout:
                 if n > 0:
                     print(f"{n} seconds. ")
                 return response
             if n == 0:
-                print(f"{message} - Waiting for {target_count}. Sleeping {sleep_time}", end='', flush=True)
+                print(
+                    f"{message} - Waiting for {target_count}. Sleeping {sleep_time}",
+                    end="",
+                    flush=True,
+                )
             n += sleep_time
             sleep(sleep_time)
-            print(".", end='', flush=True)
+            print(".", end="", flush=True)
 
-    # The next few methods are pulled form the KF client object. These should be 
-    # revisited to make sure we really need them and that they work as well as 
-    # they can, but for now, they are used by the send_request function. 
+    # The next few methods are pulled form the KF client object. These should be
+    # revisited to make sure we really need them and that they work as well as
+    # they can, but for now, they are used by the send_request function.
     def _errors_from_response(self, response_body):
         """
         Comb list of issues in FHIR response and return the ones marked error
@@ -522,8 +567,7 @@ class FhirClient:
             ]
         except:
             print(response_body)
-            #pdb.set_trace()
-
+            # pdb.set_trace()
 
     def _response_content(self, response):
         """
@@ -564,7 +608,13 @@ class FhirClient:
         """
         success = False
 
-        headers = self.get_login_header(headers = request_kwargs.get("headers"))
+        headers = self.get_login_header(headers=request_kwargs.get("headers"))
+
+        # EST 2025-05-13
+        # Holding off on adding the security labels until we meet with a larger
+        # group to discuss these issues
+        # SECURITY_LABEL
+        headers["X-Meta-Snapshot-Mode"] = "TAG, PROFILE"        
         request_kwargs["headers"] = headers
         self.auth.update_request_args(request_kwargs)
 
@@ -582,21 +632,26 @@ class FhirClient:
             errors = self._errors_from_response(resp_content)
             if not errors:
                 success = True
-                self.logwrite(request_method_name, url, response.status_code, **request_kwargs)
-                self.logger.info(
-                    f"{request_method_name} {request_url} succeeded. "
+                self.logwrite(
+                    request_method_name, url, response.status_code, **request_kwargs
                 )
+                self.logger.info(f"{request_method_name} {request_url} succeeded. ")
             else:
                 self.logwrite(request_method_name, url, errors, **request_kwargs)
-                self.logger.error(
-                    f"{request_method_name} {request_url} failed. "
-                )
+                print(request_kwargs["json"])
+                self.logger.error(f"{request_method_name} {request_url} failed. ")
         else:
-            self.logwrite(request_method_name, url, response.status_code, **request_kwargs)
+            self.logwrite(
+                request_method_name, url, response.status_code, **request_kwargs
+            )
             self.logwrite(request_method_name, url, resp_content, **request_kwargs)
 
-            if request_method_name.lower() == 'POST':
-                print(pformat(f"There was an issue with the POST: \n{request_kwargs['json']}"))
+            if request_method_name.lower() == "POST":
+                print(
+                    pformat(
+                        f"There was an issue with the POST: \n{request_kwargs['json']}"
+                    )
+                )
                 print(pformat(response.json()))
             self.logger.error(
                 f"{request_method_name} {request_url} failed, "
@@ -614,11 +669,9 @@ class FhirClient:
         )
 
     def send_raw_request(self, verb, url, header, data=None, parameters=None):
-        request_kwargs = {
-            'headers' : self.get_login_header(headers = header)
-        }
+        request_kwargs = {"headers": self.get_login_header(headers=header)}
         self.auth.update_request_args(request_kwargs)
-        headers = request_kwargs['headers']
+        headers = request_kwargs["headers"]
 
         curlit = ["curl -X POST"]
         for header in headers:
@@ -637,15 +690,14 @@ class FhirClient:
 
         return resp_content
 
+
 def exec():
     host_config = get_host_config()
     # Just capture the available environments to let the user
     # make the selection at runtime
     env_options = sorted(host_config.keys())
 
-    parser = ArgumentParser(
-        description="Basic FHIR Query tool. "
-    )
+    parser = ArgumentParser(description="Basic FHIR Query tool. ")
     parser.add_argument(
         "--host",
         choices=env_options,
@@ -654,10 +706,10 @@ def exec():
         help=f"Remote configuration to be used to access the FHIR server. If no environment is provided, the system will stop after generating the whistle output (no validation, no loading)",
     )
     parser.add_argument(
-        "--out", 
-        "-o", 
-        type=FileType('wt'),
-        help=f"Output log (will be JSON file format) for resources matching queries. If not provided, the output is only streamed to standard out."
+        "--out",
+        "-o",
+        type=FileType("wt"),
+        help=f"Output log (will be JSON file format) for resources matching queries. If not provided, the output is only streamed to standard out.",
     )
 
     parser.add_argument(
@@ -665,7 +717,7 @@ def exec():
         "--query",
         action="append",
         type=str,
-        help="A query to pass to the host. You need only the portion starting with the resource type. "
+        help="A query to pass to the host. You need only the portion starting with the resource type. ",
     )
 
     args = parser.parse_args(sys.argv[1:])
@@ -678,10 +730,14 @@ def exec():
         out_log = sys.stdout
     if args.out is not None:
         out_log.write("[\n  ")
-        dump({
-            "FHIR Server": fhir_client.target_service_url,
-            "Time Stamp": str(datetime.now()),
-        }, out_log, indent=2)
+        dump(
+            {
+                "FHIR Server": fhir_client.target_service_url,
+                "Time Stamp": str(datetime.now()),
+            },
+            out_log,
+            indent=2,
+        )
         out_log.write(",\n  ")
 
     do_continue = True
@@ -691,12 +747,13 @@ def exec():
         try:
             if args.query is None or len(args.query) == 0:
                 qry = input("FHIR Query (or 'exit'): ")
-                do_continue = qry.lower() != 'exit'
+                do_continue = qry.lower() != "exit"
             else:
                 qry = args.query[query_count]
 
             if do_continue:
                 start_time = datetime.now()
+                # pdb.set_trace()
                 response = fhir_client.get(qry, except_on_error=False)
                 query_time = datetime.now()
 
@@ -706,25 +763,33 @@ def exec():
                     out_log.write("  ")
 
                 if response.success():
-                    dump({
-                        "Query": qry,
-                        "Query Time": str(query_time-start_time),
-                        "Time Stamp": str(datetime.now()),
-                        "Status Code": response.status_code,
-                        "Record Count": len(response.entries),
-                        "Entries": response.entries
-                    }, out_log, indent=2)
+                    dump(
+                        {
+                            "Query": qry,
+                            "Query Time": str(query_time - start_time),
+                            "Time Stamp": str(datetime.now()),
+                            "Status Code": response.status_code,
+                            "Record Count": len(response.entries),
+                            "Entries": response.entries,
+                        },
+                        out_log,
+                        indent=2,
+                    )
                     if args.out is not None:
                         print(response.entries[0:2])
                         print(f"Total Responses: {len(response.entries)}")
                 else:
-                    dump({
-                        "Query": qry,                         
-                        "Query Time": str(query_time-start_time),
-                        "Time Stamp": str(datetime.now()),
-                        "Status Code": response.status_code,
-                        "Response": response.response
-                    }, out_log, indent=2)
+                    dump(
+                        {
+                            "Query": qry,
+                            "Query Time": str(query_time - start_time),
+                            "Time Stamp": str(datetime.now()),
+                            "Status Code": response.status_code,
+                            "Response": response.response,
+                        },
+                        out_log,
+                        indent=2,
+                    )
                     print(f"ERROR: {response.response['issue']}")
                 query_count += 1
 
