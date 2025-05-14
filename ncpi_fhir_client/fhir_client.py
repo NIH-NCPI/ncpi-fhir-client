@@ -614,6 +614,7 @@ class FhirClient:
         # Holding off on adding the security labels until we meet with a larger
         # group to discuss these issues
         # SECURITY_LABEL
+        # https://smilecdr.com/docs/fhir_repository/updating_data.html#tag-retention
         headers["X-Meta-Snapshot-Mode"] = "TAG, PROFILE"        
         request_kwargs["headers"] = headers
         self.auth.update_request_args(request_kwargs)
