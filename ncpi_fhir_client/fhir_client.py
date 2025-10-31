@@ -289,7 +289,6 @@ class FhirClient:
                     verb = "PUT"
                     endpoint =  f"{self.target_service_url}/{resource}/{obj['id']}"
             
-
             success, result = self.send_request(
                                 verb, 
                                 endpoint, 
@@ -395,6 +394,7 @@ class FhirClient:
                 retry_count = FhirClient.retry_post_count
 
             while retry_count > 0:
+                print(f"{verb}: {endpoint} url={obj.get('url')} id={obj.get('id')}")
                 success, result = self.send_request(
                                     verb, 
                                     endpoint, 
@@ -565,14 +565,27 @@ class FhirClient:
         success = False
 
         headers = self.get_login_header(headers = request_kwargs.get("headers"))
+
+        #headers['Allow-Redirects'] = 'False'
         request_kwargs["headers"] = headers
+        request_kwargs['allow_redirects'] = False
+        
         self.auth.update_request_args(request_kwargs)
 
         # Send request
         request_method = getattr(self.session, request_method_name.lower())
+        print(f"{request_method_name}:{url}")
+        #print(headers)
 
         response = request_method(url, **request_kwargs)
         resp_content = self._response_content(response)
+
+        try:
+            jsoutput = response.json()
+        except:
+            with open("Error_message.html", 'wt') as outf:
+                outf.write(resp_content)
+            pdb.set_trace()
 
         # Determine success and log result
         request_method_name = request_method_name.upper()
