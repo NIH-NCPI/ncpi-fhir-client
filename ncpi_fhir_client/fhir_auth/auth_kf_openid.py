@@ -43,6 +43,7 @@ class AuthKfOpenid:
         """Add the bearer token to the header based on the token provided"""
         if "headers" not in request_args:
             request_args["headers"] = {}
+        request_args["headers"]["Accept-Encoding"] = "identity"
         request_args["headers"]["Authorization"] = "Bearer " + self.access_token()
 
     @classmethod
