@@ -421,6 +421,7 @@ class FhirClient:
                 retry_count = FhirClient.retry_post_count
 
             while retry_count > 0:
+                print(f"{verb}: {endpoint} url={obj.get('url')} id={obj.get('id')}")
                 success, result = self.send_request(verb, endpoint, json=obj)
 
                 # 422 just means something was preventing it from succeeding, so
@@ -617,6 +618,10 @@ class FhirClient:
         # https://smilecdr.com/docs/fhir_repository/updating_data.html#tag-retention
         headers["X-Meta-Snapshot-Mode"] = "TAG, PROFILE"        
         request_kwargs["headers"] = headers
+
+        # Requested by Alex to overcome issue with authentication
+        # 2025-10-31
+        request_kwargs['allow_redirects'] = False
         self.auth.update_request_args(request_kwargs)
 
         # Send request
@@ -624,6 +629,14 @@ class FhirClient:
 
         response = request_method(url, **request_kwargs)
         resp_content = self._response_content(response)
+
+        try:
+            jsoutput = response.json()
+        except:
+            print(f"{request_method_name}:{url}")
+            with open("Error_message.html", 'wt') as outf:
+                outf.write(resp_content)
+            pdb.set_trace()
 
         # Determine success and log result
         request_method_name = request_method_name.upper()
