@@ -4,29 +4,25 @@ import pdb
 logger = logging.getLogger(__name__)
 # from ncpi_fhir_utility.client import FhirApiClient
 
+import subprocess
+import sys
+import urllib.parse
+from argparse import ArgumentParser, FileType
+from copy import deepcopy
+from datetime import datetime
+from json import decoder, dump, dumps
+from pathlib import Path
+from pprint import pformat
+from threading import Lock
+from time import sleep
+
+import urllib3
 from rich import print
 
 from ncpi_fhir_client import requests_retry_session
-import subprocess
-from time import sleep
-from pprint import pformat
-from copy import deepcopy
-from json import dump, dumps, decoder
-
-from datetime import datetime
-from threading import Lock
-from pathlib import Path
-
 from ncpi_fhir_client.fhir_auth import get_auth
 from ncpi_fhir_client.fhir_result import FhirResult
 from ncpi_fhir_client.host_config import get_host_config
-
-from argparse import ArgumentParser, FileType
-
-import urllib3
-import sys
-
-import urllib.parse
 
 urllib3.disable_warnings()
 http = urllib3.PoolManager(maxsize=64)
@@ -158,7 +154,7 @@ class FhirClient:
                 self.bundle.write(",")
             self.write_comma = True
             resource_data = dumps(resource)
-            full_url = f"""{self.target_service_url}/{resource['resourceType']}/{resource['id']}"""
+            full_url = f"""{self.target_service_url}/{resource["resourceType"]}/{resource["id"]}"""
             self.bundle.write(
                 """    {
       "fullUrl": \""""
@@ -280,7 +276,6 @@ class FhirClient:
                 gendpoint = f"{resource}?url={url}"
                 entries = self.get(gendpoint).entries
                 for response in entries:
-
                     if "resource" in response:
                         if skip_insert_if_present:
                             return {"status_code": 201, "response": response}
@@ -616,12 +611,12 @@ class FhirClient:
         # group to discuss these issues
         # SECURITY_LABEL
         # https://smilecdr.com/docs/fhir_repository/updating_data.html#tag-retention
-        headers["X-Meta-Snapshot-Mode"] = "TAG, PROFILE"        
+        headers["X-Meta-Snapshot-Mode"] = "TAG, PROFILE"
         request_kwargs["headers"] = headers
 
         # Requested by Alex to overcome issue with authentication
         # 2025-10-31
-        request_kwargs['allow_redirects'] = False
+        request_kwargs["allow_redirects"] = False
         self.auth.update_request_args(request_kwargs)
 
         # Send request
@@ -634,7 +629,7 @@ class FhirClient:
             jsoutput = response.json()
         except:
             print(f"{request_method_name}:{url}")
-            with open("Error_message.html", 'wt') as outf:
+            with open("Error_message.html", "wt") as outf:
                 outf.write(resp_content)
             pdb.set_trace()
 
@@ -649,7 +644,7 @@ class FhirClient:
                 self.logwrite(
                     request_method_name, url, response.status_code, **request_kwargs
                 )
-                self.logger.info(f"{request_method_name} {request_url} succeeded. ")
+                self.logger.debug(f"{request_method_name} {request_url} succeeded. ")
             else:
                 self.logwrite(request_method_name, url, errors, **request_kwargs)
                 print(request_kwargs["json"])
