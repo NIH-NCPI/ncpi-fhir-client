@@ -30,7 +30,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import track
 
-from wstlr.hostfile import load_hosts_file
+from ncpi_fhir_client.host_config import get_host_config
 
 
 
@@ -252,7 +252,7 @@ class RIdCache:
 def exec():
     from ncpi_fhir_client.fhir_client import FhirClient
 
-    host_config = load_hosts_file()
+    host_config = get_host_config()
 
     env_options = sorted(host_config.keys())
 
