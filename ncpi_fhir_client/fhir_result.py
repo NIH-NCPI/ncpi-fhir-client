@@ -4,11 +4,7 @@ Provide some basic assistance with data responses from the fhir server
 
 
 """
-import pdb
-import subprocess
 from pprint import pformat
-
-from collections import defaultdict
 
 class FhirResult:
     """Wrap the return value a bit to make interacting with it a bit more smoother"""
@@ -17,7 +13,6 @@ class FhirResult:
         self.request_url = payload['request_url']
         self.response = payload['response']
 
-        #pdb.set_trace()
         # Empty bundles don't have an entry
         if 'total' in self.response and self.response['total'] == 0:
             self.entries = []
@@ -61,7 +56,6 @@ class FhirResult:
 
         if 'entry' not in self.response:
             print(self.response)
-            pdb.set_trace()
             print("There is a problem with the response")
         self.entries += self.response['entry']
         self.entry_count = len(self.entries)  

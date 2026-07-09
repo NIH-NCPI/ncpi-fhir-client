@@ -3,7 +3,6 @@
 
 """
 
-import json
 import datetime
 import requests
 from rich import print

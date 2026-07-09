@@ -18,7 +18,7 @@ import sys
 import os
 import re
 from collections import defaultdict
-from argparse import ArgumentParser, FileType
+from argparse import ArgumentParser
 
 from ncpi_fhir_client import default_resources, report_exception
 # The get_id will be run inside a thread, so I guess we need to protect it...not really sure
@@ -32,7 +32,6 @@ from rich.progress import track
 
 from wstlr.hostfile import load_hosts_file
 
-import pdb
 
 
 # id_log = open("__ID_LOG.txt", 'wt')
@@ -87,7 +86,6 @@ class RIdCache:
         if valid_patterns is not None:
             for pattern in valid_patterns:
                 self.valid_patterns.append(re.compile(pattern, re.I))
-        # pdb.set_trace()
 
         # resourceType=>system=>value = ID
         self.cache = defaultdict(lambda: defaultdict(dict))
@@ -116,7 +114,7 @@ class RIdCache:
                     table.add_row(resource_type, str(id_count))
                 ids_found += id_count
             except DuplicateIdentifierFound as e:
-                pdb.set_trace()
+                print(e)
                 os._exit(1)
         console = Console()
         console.print(table, justify="center")
@@ -152,30 +150,22 @@ class RIdCache:
         return False
 
     def load_ids_for_resource_type(self, fhir_client, resource_type, exit_on_dupes=False):
-        #print(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
-        #if resource_type == "Observation":
-        #    print("Observing the observations")
-        #    pdb.set_trace()
         params = ["_elements=identifier,id","_count=200"]
         if self.study_id is not None:
             params = [f"_tag={self.study_id}"] + params
-            
+
         params = "&".join(params)
-        #result = fhir_client.get(f"{resource_type}?_tag={self.study_id}&_elements=identifier,id&_count=200")
 
         result = fhir_client.get(f"{resource_type}?{params}")
-        #pdb.set_trace()
         record_count = 0
         if result.success():
             for entity in result.entries:
                 if 'resource' not in entity:
                     print(pformat(entity))
-                    pdb.set_trace()
 
                 resource = entity['resource']
                 if resource['resourceType'] != resource_type:
                     print(f"Here is an issue: {resource['resourceType']} ~= {resource_type}")
-                    #pdb.set_trace()
                 else:
                     target_id = resource['id']
                     try:
@@ -184,7 +174,7 @@ class RIdCache:
                             entity_key =get_identifier(resource)['value']
                             self.store_id(resource_type, target_system, entity_key, target_id, exit_on_dupes=exit_on_dupes)
                             record_count += 1
-                    except:
+                    except (TypeError, IndexError, KeyError):
                         self.missing_identifiers[resource_type].append(resource)
 
         return record_count
@@ -248,10 +238,7 @@ class RIdCache:
         """
         if target_system.split("/")[-1] != entity_type.lower():
             self.malformed_ids.add(f"{target_system}|{entity_key}")
-            #print(f"Attempting to cache IDs that don't conform with Whistler format:")
-            #print(f"System: {target_system}  Key: {entity_key}  Type: {entity_type} ID: {target_id}")
-            #pdb.set_trace()
-        
+
         if entity_key in self.cache[target_system]:
             if exit_on_dupes:
                 sys.stderr.write(f"""Duplicate key found for {target_system}:{entity_key} 
