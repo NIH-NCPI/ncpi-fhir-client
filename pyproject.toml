@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ncpi-fhir-client"
+dynamic = ["version"]
+description = "NCPI FHIR Client"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "urllib3>2.5.0",
+    "requests>2.27.0",
+    "rich",
+    "pyjwt",
+    "PyYAML",
+]
+
+[project.urls]
+Repository = "https://github.com/NIH-NCPI/ncpi-fhir-client"
+
+[project.optional-dependencies]
+test = ["pytest"]
+dev = ["pytest", "mypy"]
+
+[project.scripts]
+fhirq = "ncpi_fhir_client.fhir_client:exec"
+
+[tool.setuptools.dynamic]
+version = { attr = "ncpi_fhir_client.version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["ncpi_fhir_client*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
