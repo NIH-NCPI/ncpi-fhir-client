@@ -8,30 +8,34 @@ TODO: Add support to allow the program to prompt the user for the cookie if it i
       be invalid
 """
 
+from __future__ import annotations
+
+from typing import Any, TextIO
+
 class AuthKfAws:
-    def __init__(self, cfg):
+    def __init__(self, cfg: dict[str, Any]) -> None:
         self.cookie = cfg['cookie']
 
-        self.username = None
-        self.password = None
-        # For QA and Prod, we will also have basic authentication on top of the 
-        # cookie. Hopefully this will be sufficient 
+        self.username: str | None = None
+        self.password: str | None = None
+        # For QA and Prod, we will also have basic authentication on top of the
+        # cookie. Hopefully this will be sufficient
         if 'username' in cfg:
-            self.username = cfg['username'] 
+            self.username = cfg['username']
             self.password = cfg['password']
 
-    def update_request_args(self, request_args):
+    def update_request_args(self, request_args: dict[str, Any]) -> None:
         """Add cookie details to the header"""
         if 'headers' not in request_args:
             request_args['headers'] = {}
 
         if self.username is not None:
             request_args['auth'] = (self.username, self.password)
-            
+
         request_args['headers']['cookie'] = self.cookie
 
     @classmethod
-    def example_config(cls, writer, other_entries):
+    def example_config(cls, writer: TextIO, other_entries: dict[str, Any]) -> None:
         print(f"""\n# Example configuration for cookie based authentication
 dev-kf-aws:
     auth_type: 'auth_kf_aws'
