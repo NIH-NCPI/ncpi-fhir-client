@@ -16,11 +16,8 @@ TODO: There is no caching of these tokens, so permission will be required each
 import jwt
 import json
 import datetime
-import subprocess
 import requests
-from pathlib import Path
 import sys
-import pdb
 from rich import pretty
 
 pretty.install()
@@ -90,7 +87,7 @@ class GoogleAuth(object):
                                     'response_type': 'code'
                                     }
                                 )
-                except:
+                except requests.exceptions.RequestException:
                     print(f"Unable to get token: {datetime.datetime.now().strftime('%H:%M:%S')}")
                     sys.exit(1)
                 self.token = req.json()['access_token']

@@ -1,14 +1,9 @@
-import pdb
-
-
 import requests
 from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 import traceback
 import sys
 
-from pathlib import Path
-from yaml import safe_load
 from rich import print
 
 _default_resources = None
@@ -17,7 +12,6 @@ _default_resources = None
 # so, since we are in a bit of a hurry, I'm just stashing those types here until
 # I can dig deeper into a possible way to identify resources that aren't queryable
 _invalid_resource_types = ["DomainResource", "Resource"]
-import pdb
 
 
 def default_resources(host, ignore_resources=["Bundle"], reset=False):
@@ -34,7 +28,6 @@ def default_resources(host, ignore_resources=["Bundle"], reset=False):
         for restful_entry in cs["rest"]:
             if "resource" in restful_entry:
                 for resource in restful_entry["resource"]:
-                    # pdb.set_trace()
                     if resource["type"] not in _invalid_resource_types:
                         _default_resources.append(resource["type"])
 

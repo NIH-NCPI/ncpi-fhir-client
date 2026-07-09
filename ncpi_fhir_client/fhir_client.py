@@ -1,10 +1,8 @@
 import logging
-import pdb
 
 logger = logging.getLogger(__name__)
 # from ncpi_fhir_utility.client import FhirApiClient
 
-import subprocess
 import sys
 import urllib.parse
 from argparse import ArgumentParser, FileType
@@ -207,19 +205,6 @@ class FhirClient:
             return responses[0]
         return responses
 
-    def send_request_(self, verb, api_path, body=None, headers=None):
-        if headers is None:
-            headers = {}
-
-        # Auth requires different components of the request, depending on the
-        # auth type, so we need to pass the entire
-        if reqargs is None:
-            reqargs = {"headers": self.get_login_header(headers)}
-
-        self.auth.update_request_args(reqargs)
-
-        return self.client().send_request(verb, api_path, json=body, headers=headers)
-
     def delete_by_record_id(self, resource, id, silence_warnings=False):
         """Just a basic delete wrapper"""
         endpoint = f"{self.target_service_url}/{resource}/{id}"
@@ -283,9 +268,7 @@ class FhirClient:
                             obj["id"] = response["resource"]["id"]
                         else:
                             # Only delete if we encounter the same thing more than once
-                            del_response = None
-                            retry_count = 1
-                            delrsp = self.delete_by_record_id(
+                            self.delete_by_record_id(
                                 resource, response["resource"]["id"]
                             )
                             fresponse = self.sleep_until(
@@ -327,14 +310,11 @@ class FhirClient:
 
             endpoint = sep.join(endpoint_pieces)
         verb = "POST"
-        # pdb.set_trace()
         success, result = self.send_request(verb, endpoint, json=data)
         print(result)
-        # pdb.set_trace()
 
         if not success:
             print("There was a problem with the request for the GET")
-            pdb.set_trace()
 
     def post(
         self,
@@ -399,7 +379,6 @@ class FhirClient:
                                 print(
                                     f"get returned more than one ({result.entry_count}) resource: {identifier}"
                                 )
-                                # pdb.set_trace()
                                 entry = result.entries[0]
                                 id = entry["resource"]["id"]
                                 obj["id"] = id
@@ -428,7 +407,6 @@ class FhirClient:
                     retry_count = 0
                 else:
                     print(f"Request failed with {result['status_code']}")
-                    # pdb.set_trace()
 
                     sleep(1)
                     print(pformat(data))
@@ -561,9 +539,8 @@ class FhirClient:
                 for issue in response_body.get("issue", [])
                 if issue["severity"] == "error"
             ]
-        except:
+        except (KeyError, TypeError):
             print(response_body)
-            # pdb.set_trace()
 
     def _response_content(self, response):
         """
@@ -626,12 +603,11 @@ class FhirClient:
         resp_content = self._response_content(response)
 
         try:
-            jsoutput = response.json()
-        except:
+            response.json()
+        except decoder.JSONDecodeError:
             print(f"{request_method_name}:{url}")
             with open("Error_message.html", "wt") as outf:
                 outf.write(resp_content)
-            pdb.set_trace()
 
         # Determine success and log result
         request_method_name = request_method_name.upper()
@@ -762,7 +738,6 @@ def exec():
 
             if do_continue:
                 start_time = datetime.now()
-                # pdb.set_trace()
                 response = fhir_client.get(qry, except_on_error=False)
                 query_time = datetime.now()
 
@@ -802,7 +777,7 @@ def exec():
                     print(f"ERROR: {response.response['issue']}")
                 query_count += 1
 
-        except:
+        except Exception:
             do_continue = False
 
     if args.out:
