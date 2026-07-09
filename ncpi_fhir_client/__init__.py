@@ -1,12 +1,16 @@
-import requests
-from requests.packages.urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
-import traceback
+from __future__ import annotations
+
 import sys
+import traceback
+from typing import Any, NoReturn
+
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from rich import print
 
-_default_resources = None
+_default_resources: list[str] | None = None
 
 # Google seems to respond with some resources that it doesn't support queries for,
 # so, since we are in a bit of a hurry, I'm just stashing those types here until
@@ -14,7 +18,9 @@ _default_resources = None
 _invalid_resource_types = ["DomainResource", "Resource"]
 
 
-def default_resources(host, ignore_resources=["Bundle"], reset=False):
+def default_resources(
+    host: Any, ignore_resources: list[str] = ["Bundle"], reset: bool = False
+) -> list[str]:
     global _default_resources
 
     if reset or (_default_resources is not None and len(_default_resources) == 0):
@@ -34,7 +40,7 @@ def default_resources(host, ignore_resources=["Bundle"], reset=False):
     return [x for x in _default_resources if x not in ignore_resources]
 
 
-def report_exception(ex, msg):
+def report_exception(ex: BaseException, msg: str) -> NoReturn:
     tb_lines = traceback.format_exception(ex.__class__, ex, ex.__traceback__)
     tb_text = "".join(tb_lines)
     print(tb_text)
@@ -44,14 +50,14 @@ def report_exception(ex, msg):
 
 # Stolen from KF FHIR Utility:
 def requests_retry_session(
-    session=None,
-    total=10,
-    read=10,
-    connect=1,
-    status=10,
-    backoff_factor=5,
-    status_forcelist=(500, 502, 503, 504),
-):
+    session: requests.Session | None = None,
+    total: int = 10,
+    read: int = 10,
+    connect: int = 1,
+    status: int = 10,
+    backoff_factor: int = 5,
+    status_forcelist: tuple[int, ...] = (500, 502, 503, 504),
+) -> requests.Session:
     """
     Send an http request and retry on failures or redirects
 
@@ -84,7 +90,7 @@ def requests_retry_session(
     return session
 
 
-def die_if(do_die, msg, errnum=1):
+def die_if(do_die: bool, msg: str, errnum: int = 1) -> None:
     if do_die:
         sys.stderr.write(msg + "\n")
         sys.exit(errnum)

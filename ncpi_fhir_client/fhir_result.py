@@ -4,11 +4,14 @@ Provide some basic assistance with data responses from the fhir server
 
 
 """
+from __future__ import annotations
+
 from pprint import pformat
+from typing import Any
 
 class FhirResult:
     """Wrap the return value a bit to make interacting with it a bit more smoother"""
-    def __init__(self, payload):
+    def __init__(self, payload: dict[str, Any]) -> None:
         self.status_code = payload['status_code']
         self.request_url = payload['request_url']
         self.response = payload['response']
@@ -23,18 +26,18 @@ class FhirResult:
         else:
             self.entries = [self.response]
 
-        # If there is pagination, this will capture the "next" url to traverse 
+        # If there is pagination, this will capture the "next" url to traverse
         # large returns
-        self.next = None
+        self.next: str | None = None
 
         self.entry_count = len(self.entries)
 
         if "link" in self.response:
             for ref in self.response['link']:
                 if ref['relation'] == 'next':
-                    self.next = ref['url']       
+                    self.next = ref['url']
 
-    def success(self, dump_error=False):
+    def success(self, dump_error: bool = False) -> bool:
         is_good = self.status_code > 199 and self.status_code < 300
 
         if not is_good and dump_error:
@@ -44,7 +47,7 @@ class FhirResult:
 
         return is_good
 
-    def append(self, payload):
+    def append(self, payload: dict[str, Any]) -> None:
         """Extend our entry data by following pagination links"""
 
         self.response = payload['response']
@@ -52,12 +55,12 @@ class FhirResult:
 
         for ref in self.response['link']:
             if ref['relation'] == 'next':
-                self.next = ref['url']   
+                self.next = ref['url']
 
         if 'entry' not in self.response:
             print(self.response)
             print("There is a problem with the response")
         self.entries += self.response['entry']
-        self.entry_count = len(self.entries)  
+        self.entry_count = len(self.entries)
 
     

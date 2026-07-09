@@ -11,10 +11,13 @@ must be accessible vi the python "open" system. So, it can't reside in a cloud
 bucket at this time. So, probably a better solution for shared system than a 
 cloud based system.
 """
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any, TextIO
 
 class AuthBasic:
-    def __init__(self, cfg):
+    def __init__(self, cfg: dict[str, Any]) -> None:
         self.username = cfg['username']
         self.password = cfg['password']
 
@@ -24,14 +27,14 @@ class AuthBasic:
             self.password = Path(self.password).read_text().rstrip()
 
     @property
-    def auth(self):
+    def auth(self) -> tuple[str, str]:
         return (self.username, self.password)
-    
-    def update_request_args(self, request_args):
+
+    def update_request_args(self, request_args: dict[str, Any]) -> None:
         request_args['auth'] = (self.username, self.password)
 
     @classmethod
-    def example_config(cls, writer, other_entries):
+    def example_config(cls, writer: TextIO, other_entries: dict[str, Any]) -> None:
         print(f"""\n# Example of a basic auth configuration
 dev:
     auth_type: 'auth_basic'

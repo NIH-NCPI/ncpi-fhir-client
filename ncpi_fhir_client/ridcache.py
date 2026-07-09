@@ -14,15 +14,18 @@ large numbers of datasets already on board.
 
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import re
 from collections import defaultdict
 from argparse import ArgumentParser
+from typing import Any
 
 from ncpi_fhir_client import default_resources, report_exception
 # The get_id will be run inside a thread, so I guess we need to protect it...not really sure
-# if the read can be interrupted. Probably not but it should be reasonably fast. 
+# if the read can be interrupted. Probably not but it should be reasonably fast.
 from threading import Lock
 from pprint import pformat
 from rich import print
@@ -43,7 +46,7 @@ _ignored_resource_types = [
     'Bundle'
 ]
 
-def get_identifier(resource):
+def get_identifier(resource: dict[str, Any]) -> dict[str, Any] | None:
     idnt = resource.get('identifier')
 
     if type(idnt) is list:
@@ -51,48 +54,53 @@ def get_identifier(resource):
     return idnt
 
 class DuplicateIdentifierFound(Exception):
-    def __init__(self, target_system, entity_key, entity_type, target_id):
+    def __init__(self, target_system: str, entity_key: str, entity_type: str, target_id: str) -> None:
         self.target_system = target_system
         self.entity_key = entity_key
         self.entity_type = entity_type
         self.target_id = target_id
         super().__init__(self.message())
 
-    def message(self):
+    def message(self) -> str:
         return f"""Duplicate key found for {self.target_system}:{self.entity_key} -> {self.entity_type}/{self.target_id} exists with the same key."""
 
 
 class RIdCache:
-    def __init__(self, study_id=None, resource_types = None, valid_patterns = None):
+    def __init__(
+        self,
+        study_id: str | None = None,
+        resource_types: list[str] | None = None,
+        valid_patterns: list[str] | None = None,
+    ) -> None:
         """
         :param resource_types: List of FHIR Resource types expected to be encountered
         :type resource_types: List of strings
         :param valid_patterns: List of text strings which can be expected to be found in the identifiers
         :type valid_patterns: List of strings
 
-        The client's target host will be used in the db schema to allow us 
+        The client's target host will be used in the db schema to allow us
         to use a single database for persistance. The client object itself will
         be used to grab the identities and ids from the remote host.
 
         If resourceTypes is None, we'll use the default list of resources
         """
         self.resource_types = resource_types
-        self.valid_patterns = []
+        self.valid_patterns: list[re.Pattern[str]] = []
         self.study_id = study_id
-        # log IDs encountered which don't conform to the whistle 
-        # format 
-        self.malformed_ids = set()      
+        # log IDs encountered which don't conform to the whistle
+        # format
+        self.malformed_ids: set[str] = set()
 
         if valid_patterns is not None:
             for pattern in valid_patterns:
                 self.valid_patterns.append(re.compile(pattern, re.I))
 
         # resourceType=>system=>value = ID
-        self.cache = defaultdict(lambda: defaultdict(dict))
+        self.cache: defaultdict[str, dict[str, tuple[str, str]]] = defaultdict(dict)
 
-        self.missing_identifiers = defaultdict(list)
-    
-    def load_ids_from_host(self, fhir_client, exit_on_dupes=False):
+        self.missing_identifiers: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+
+    def load_ids_from_host(self, fhir_client: Any, exit_on_dupes: bool = False) -> None:
         """
         Loads ids from the host via the client object and stores them inside the cache
         
@@ -140,23 +148,25 @@ class RIdCache:
 
             console.print(table, justify="center")
 
-    def valid_system(self, target_system):
+    def valid_system(self, target_system: str) -> bool:
         if len(self.valid_patterns) == 0:
             return True
-        
+
         for pattern in self.valid_patterns:
             if pattern.search(target_system):
                 return True
         return False
 
-    def load_ids_for_resource_type(self, fhir_client, resource_type, exit_on_dupes=False):
+    def load_ids_for_resource_type(
+        self, fhir_client: Any, resource_type: str, exit_on_dupes: bool = False
+    ) -> int:
         params = ["_elements=identifier,id","_count=200"]
         if self.study_id is not None:
             params = [f"_tag={self.study_id}"] + params
 
-        params = "&".join(params)
+        query_string = "&".join(params)
 
-        result = fhir_client.get(f"{resource_type}?{params}")
+        result = fhir_client.get(f"{resource_type}?{query_string}")
         record_count = 0
         if result.success():
             for entity in result.entries:
@@ -169,9 +179,13 @@ class RIdCache:
                 else:
                     target_id = resource['id']
                     try:
-                        target_system = get_identifier(resource)['system']
+                        # get_identifier() may return None; indexing it here is
+                        # intentional -- the resulting TypeError is handled below
+                        # the same way as a missing 'system'/'value' key.
+                        identifier = get_identifier(resource)
+                        target_system = identifier['system']  # type: ignore[index]
                         if self.valid_system(target_system):
-                            entity_key =get_identifier(resource)['value']
+                            entity_key = identifier['value']  # type: ignore[index]
                             self.store_id(resource_type, target_system, entity_key, target_id, exit_on_dupes=exit_on_dupes)
                             record_count += 1
                     except (TypeError, IndexError, KeyError):
@@ -180,7 +194,9 @@ class RIdCache:
         return record_count
 
 
-    def get_id(self, target_system, entity_key, resource_type=None):
+    def get_id(
+        self, target_system: str, entity_key: str, resource_type: str | None = None
+    ) -> tuple[str, str] | str | None:
         """
         Retrieve the target service ID for a given source unique key.
 
@@ -201,8 +217,14 @@ class RIdCache:
         return result
 
     def store_id(
-        self, entity_type, target_system, entity_key, target_id, no_db=False, exit_on_dupes=False
-    ):
+        self,
+        entity_type: str,
+        target_system: str,
+        entity_key: str,
+        target_id: str,
+        no_db: bool = False,
+        exit_on_dupes: bool = False,
+    ) -> None:
         """
         Cache the relationship between a source unique key and its corresponding
         target service ID.
@@ -220,8 +242,13 @@ class RIdCache:
             self._store_id(entity_type, target_system, entity_key, target_id, exit_on_dupes=exit_on_dupes)
 
     def _store_id(
-        self, entity_type, target_system, entity_key, target_id, exit_on_dupes=False
-    ):
+        self,
+        entity_type: str,
+        target_system: str,
+        entity_key: str,
+        target_id: str,
+        exit_on_dupes: bool = False,
+    ) -> None:
         """
         Cache the relationship between a source unique key and its corresponding
         target service ID. This version doesn't use locks so it should not be 
@@ -249,7 +276,7 @@ class RIdCache:
         self.cache[target_system][entity_key] = (entity_type, target_id)
         # id_log.write(f"{target_system}\t{entity_key}\t{entity_type}\t{target_id}\n")
 
-def exec():
+def exec() -> None:
     from ncpi_fhir_client.fhir_client import FhirClient
 
     host_config = get_host_config()

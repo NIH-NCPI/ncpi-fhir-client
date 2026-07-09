@@ -34,3 +34,7 @@ include = ["ncpi_fhir_client*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+files = ["ncpi_fhir_client"]
+ignore_missing_imports = true

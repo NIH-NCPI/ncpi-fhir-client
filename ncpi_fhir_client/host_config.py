@@ -2,14 +2,18 @@
 Standard fhir_host configuration parsing to make tools built around the 
 tools that use the fhir_client be able to use the same host configuration. 
 """
+from __future__ import annotations
+
 import sys
 from pathlib import Path
+from typing import Any, TextIO
+
 from yaml import safe_load
 from rich import print
 from . import die_if
 from . import fhir_auth
 
-def example_config(writer, auth_type=None):
+def example_config(writer: TextIO, auth_type: str | None = None) -> None:
     """Returns a block of text containing one or all possible auth modules example configurations"""
 
     modules = fhir_auth.get_modules()
@@ -40,7 +44,7 @@ def example_config(writer, auth_type=None):
 
             modules[key].example_config(writer, other_entries)
 
-def get_host_config():
+def get_host_config() -> dict[str, Any]:
     host_config_filename = Path("fhir_hosts")
 
     if not host_config_filename.is_file() or host_config_filename.stat().st_size == 0:

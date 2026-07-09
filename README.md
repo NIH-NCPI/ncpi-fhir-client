@@ -11,6 +11,13 @@ pip install -e ".[test]"
 pytest
 ```
 
+Type hints are being added incrementally, module by module. Checked modules are enforced in CI via `mypy`; run it locally with:
+
+```bash
+pip install -e ".[dev]"
+mypy
+```
+
 This is largely a wrapper around the ncpi-fhir-utility client module, with a few convenience functions as well as a modular authentication scheme which should allow users to seamlessy run the same programs against different fhir platforms with no code changes. 
 
 # Developing auth modules
